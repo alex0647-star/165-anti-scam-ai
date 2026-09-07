@@ -1,17 +1,37 @@
 """系統組態設定模組 (Config Module)
 
 定義 API 金鑰、模型選擇、風險門檻與支援的詐騙類型常數。
+自動支援 Streamlit Cloud Secrets 與本機環境變數。
 """
 
 import os
 
-# 讀取環境變數 (可搭配 .env 使用)
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+
+def get_secret(key: str, default: str = "") -> str:
+    """自動相容 Streamlit Cloud Secrets 與標準環境變數"""
+    val = os.getenv(key)
+    if val and val.strip():
+        return val.strip()
+
+    try:
+        import streamlit as st
+        if hasattr(st, "secrets") and key in st.secrets:
+            s_val = str(st.secrets[key]).strip()
+            if s_val:
+                return s_val
+    except Exception:
+        pass
+
+    return default
+
+
+# 讀取環境變數 / Streamlit Secrets
+GEMINI_API_KEY = get_secret("GEMINI_API_KEY", "")
+OPENAI_API_KEY = get_secret("OPENAI_API_KEY", "")
 
 # 預設使用模型 (支援 gemini-1.5-flash, gpt-4o-mini, mock)
-DEFAULT_MODEL_PROVIDER = os.getenv("LLM_PROVIDER", "gemini")  # "gemini" | "openai" | "mock"
-DEFAULT_MODEL_NAME = os.getenv("LLM_MODEL", "gemini-1.5-flash")
+DEFAULT_MODEL_PROVIDER = get_secret("LLM_PROVIDER", "gemini")
+DEFAULT_MODEL_NAME = get_secret("LLM_MODEL", "gemini-1.5-flash")
 
 # 風險分級門檻標準
 RISK_THRESHOLDS = {
@@ -33,6 +53,7 @@ SUPPORTED_SCAM_TYPES = [
     "假親友借錢 / 盜用帳號",
     "正常訊息 / 非詐騙"
 ]
+
 
 def get_risk_level_from_score(score: int) -> str:
     """根據風險分數轉換為對應中文等級"""
