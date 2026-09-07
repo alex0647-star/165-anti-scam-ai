@@ -118,8 +118,8 @@ class AntiScamForensicEngine:
         return self._intelligent_offline_inference(user_text, rag_cases)
 
     def _call_gemini_api(self, prompt: str) -> str:
-        """調用 Google Gemini REST API"""
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent?key={self.api_key}"
+        """調用 Google Gemini REST API (具備多模型自動降級)"""
+        models_to_try = [self.model_name, "gemini-3.6-flash", "gemini-flash-latest", "gemini-1.5-flash"]
         headers = {"Content-Type": "application/json"}
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
@@ -128,10 +128,20 @@ class AntiScamForensicEngine:
                 "response_mime_type": "application/json"
             }
         }
-        resp = requests.post(url, headers=headers, json=payload, timeout=25)
-        resp.raise_for_status()
-        data = resp.json()
-        return data["candidates"][0]["content"]["parts"][0]["text"]
+        last_err = None
+        for m in models_to_try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={self.api_key}"
+            try:
+                resp = requests.post(url, headers=headers, json=payload, timeout=25)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return data["candidates"][0]["content"]["parts"][0]["text"]
+            except Exception as e:
+                last_err = e
+                continue
+        if last_err:
+            raise last_err
+        raise RuntimeError("Gemini API 調用失敗")
 
     def _call_openai_api(self, prompt: str) -> str:
         """調用 OpenAI 格式 API"""
