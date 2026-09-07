@@ -187,11 +187,12 @@ class AntiScamForensicEngine:
         # 信任之台灣官方與正派機構網域白名單 (不視為釣魚連結)
         TRUSTED_DOMAINS = [
             "cht.tw", "twm.tw", "taiwanmobile.com", "fet.tw", "fetnet.net",
+            "sho.pe", "shopee.tw", "momo.dm", "momo.com.tw", "pchome.tw", "pchome.com.tw",
+            "lin.ee", "line.me", "fami.tw", "family.com.tw", "7-11.com.tw",
             "gov.tw", "edu.tw", "cathaybk.com.tw", "esunbank.com.tw",
             "taipower.com.tw", "water.gov.tw", "post.gov.tw", "fubon.com",
             "ctbcbank.com", "megabank.com.tw", "sinopac.com", "hncb.com.tw",
-            "tbb.com.tw", "bot.com.tw", "landbank.com.tw", "momo.com.tw",
-            "pchome.com.tw", "shopee.tw", "7-11.com.tw", "family.com.tw",
+            "tbb.com.tw", "bot.com.tw", "landbank.com.tw",
             "ntu.edu.tw", "moj.gov.tw", "npa.gov.tw", "trendmicro.com"
         ]
 
