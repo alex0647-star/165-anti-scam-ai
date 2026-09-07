@@ -177,7 +177,8 @@ class ScamKnowledgeRetriever:
             if score > 0:
                 scores.append((score, entry))
 
-        # 按相關度分數由高到低排序
-        scores.sort(key=lambda x: x[0], reverse=True)
-        results = [item[1] for item in scores[:top_k]]
+        # 按相關度分數由高到低排序 (僅保留達門檻之相關案例)
+        valid_scores = [item for item in scores if item[0] >= 3.0]
+        valid_scores.sort(key=lambda x: x[0], reverse=True)
+        results = [item[1] for item in valid_scores[:top_k]]
         return results

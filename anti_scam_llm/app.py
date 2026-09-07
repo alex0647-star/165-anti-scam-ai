@@ -168,8 +168,9 @@ with tab_text:
         
         if analyze_btn and input_text.strip():
             with st.spinner("AI 鑑識專家正在檢索 165 知識庫並進行 CoT 推理分析..."):
+                fresh_engine = AntiScamForensicEngine(api_key=active_gemini_key if active_gemini_key else None)
                 payload = InputPayload(text=input_text)
-                result = engine.analyze(payload)
+                result = fresh_engine.analyze(payload)
                 ra = result.risk_assessment
 
                 # 顏色與狀態定義
@@ -373,13 +374,14 @@ with tab_bench:
 
     if st.button("🚀 立即執行完整 20 筆基準測試評估", type="primary"):
         with st.spinner("正在對 20 筆對抗測試案例進行端到端盲測..."):
+            fresh_engine = AntiScamForensicEngine(api_key=active_gemini_key if active_gemini_key else None)
             total_cases = len(GOLDEN_TEST_DATASET)
             correct_count = 0
             results_table = []
 
             for case in GOLDEN_TEST_DATASET:
                 p = InputPayload(text=case["input_text"])
-                res = engine.analyze(p)
+                res = fresh_engine.analyze(p)
                 ra = res.risk_assessment
                 
                 is_predicted_scam = (ra.risk_score >= 50)

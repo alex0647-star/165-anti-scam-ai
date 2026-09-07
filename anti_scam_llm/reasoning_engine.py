@@ -124,7 +124,7 @@ class AntiScamForensicEngine:
         return self._intelligent_offline_inference(user_text, rag_cases)
 
     def _call_gemini_api(self, prompt: str) -> str:
-        """調用 Google Gemini REST API (具備多模型自動降級)"""
+        """調用 Google Gemini REST API (具備多模型自動降級與重試)"""
         candidate_models = [self.model_name, "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-flash-latest"]
         models_to_try = []
         for m in candidate_models:
@@ -142,12 +142,20 @@ class AntiScamForensicEngine:
         for m in models_to_try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={self.api_key}"
             try:
-                resp = requests.post(url, headers=headers, json=payload, timeout=25)
+                resp = requests.post(url, headers=headers, json=payload, timeout=30)
                 if resp.status_code == 200:
                     data = resp.json()
                     return data["candidates"][0]["content"]["parts"][0]["text"]
             except Exception as e:
                 last_err = e
+                # 嘗試不帶 response_mime_type 模式重試
+                try:
+                    p_fallback = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.1}}
+                    r_fb = requests.post(url, headers=headers, json=p_fallback, timeout=25)
+                    if r_fb.status_code == 200:
+                        return r_fb.json()["candidates"][0]["content"]["parts"][0]["text"]
+                except Exception:
+                    pass
                 continue
         if last_err:
             raise last_err
@@ -176,8 +184,30 @@ class AntiScamForensicEngine:
         low_text = user_text.lower()
         now_iso = datetime.now(timezone.utc).isoformat()
         
+        # 信任之台灣官方與正派機構網域白名單 (不視為釣魚連結)
+        TRUSTED_DOMAINS = [
+            "cht.tw", "gov.tw", "edu.tw", "cathaybk.com.tw", "esunbank.com.tw",
+            "taipower.com.tw", "water.gov.tw", "post.gov.tw", "fubon.com",
+            "ctbcbank.com", "megabank.com.tw", "sinopac.com", "hncb.com.tw",
+            "tbb.com.tw", "bot.com.tw", "landbank.com.tw", "momo.com.tw",
+            "pchome.com.tw", "shopee.tw", "7-11.com.tw", "family.com.tw",
+            "ntu.edu.tw", "moj.gov.tw", "npa.gov.tw", "trendmicro.com"
+        ]
+
+        # 抽取訊息中所有網址
+        found_urls = re.findall(r"https?://[^\s]+", user_text)
+        has_suspicious_url = False
+        suspicious_url_str = ""
+        for u in found_urls:
+            u_low = u.lower()
+            is_trusted = any(td in u_low for td in TRUSTED_DOMAINS)
+            if not is_trusted:
+                has_suspicious_url = True
+                suspicious_url_str = u
+                break
+
         # 關鍵詐騙特徵指標
-        has_phishing_link = ("http://" in low_text or "https://" in low_text or "line.me" in low_text or ".vip" in low_text or ".top" in low_text or ".xyz" in low_text or ".cc" in low_text)
+        has_phishing_link = has_suspicious_url or (".vip" in low_text or ".top" in low_text or ".xyz" in low_text or ".cc" in low_text)
         has_money_trigger = ("atm" in low_text or "轉帳" in low_text or "監管帳戶" in low_text or "解除分期" in low_text or "匯款" in low_text or "usdt" in low_text or "提現保證金" in low_text or "日領高薪" in low_text or "給你抽" in low_text or "丟你那邊" in low_text or "借帳戶" in low_text or "租帳戶" in low_text or "不能收錢" in low_text or "提領" in low_text)
         has_legal_threat = ("洗錢防制法" in user_text or "地檢署" in user_text or "特偵組" in user_text or "強制拘提" in user_text or "公文傳票" in user_text or "健保卡異常" in user_text or "鎖卡" in user_text or "凍結" in user_text or "停水" in user_text)
         has_investment_trap = ("飆股" in user_text or "老師帶盤" in user_text or "內線消息" in user_text or "保證獲利" in user_text or "翻倍" in user_text or "外資" in user_text or "佈局" in user_text or "代操" in user_text or "蛋糕" in user_text or "金控" in user_text or "加.賴" in user_text or "投.貲" in user_text or "老帥" in user_text)
