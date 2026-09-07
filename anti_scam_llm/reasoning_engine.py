@@ -64,7 +64,7 @@ class AntiScamForensicEngine:
                 },
                 "red_flags": [],
                 "psychological_tactics": [],
-                "evidence_analysis": "此圖片中未偵測到任何可疑詐騙字句或惡意特徵。\n\n💡 **重要提示**：若您上傳的是對話截圖，請至右下角 **「⚙️ 管理應用」➔ Settings ➔ Secrets** 填入 `GEMINI_API_KEY = "您的金鑰"`，系統即可自動啟動 Gemini 1.5 Flash 多模態 OCR 進行深度鑑識！",
+                "evidence_analysis": "此圖片中未偵測到任何可疑詐騙字句或惡意特徵。\n\n💡 **重要提示**：若您上傳的是對話截圖，請至右下角 **「⚙️ 管理應用」➔ Settings ➔ Secrets** 填入 `GEMINI_API_KEY = '您的金鑰'`，系統即可自動啟動 Gemini 1.5 Flash 多模態 OCR 進行深度鑑識！",
                 "actionable_guidance": {
                     "immediate_actions": ["無須採取任何防禦行動。"],
                     "official_verification": ["若要啟用截圖自動辨識，請配置 GEMINI_API_KEY。"],
