@@ -2,22 +2,22 @@
 
 處理對話截圖、簡訊截圖與公文圖片，支援：
 1. Gemini 1.5 Flash 多模態 OCR 與視覺理解
-2. 本地圖片基礎資訊解析與安全例外防護
+2. 錯誤診斷與視覺回饋
 """
 
 import os
 import base64
 from typing import Dict, Any, Optional
 import requests
-from anti_scam_llm.config import GEMINI_API_KEY, OPENAI_API_KEY
+from anti_scam_llm.config import GEMINI_API_KEY, OPENAI_API_KEY, get_secret
 
 
 class VisionProcessor:
     """多模態圖片前處理與視覺鑑識器"""
 
     def __init__(self, api_key: Optional[str] = None):
-        self.gemini_key = api_key or os.getenv("GEMINI_API_KEY") or GEMINI_API_KEY
-        self.openai_key = os.getenv("OPENAI_API_KEY") or OPENAI_API_KEY
+        self.gemini_key = api_key or get_secret("GEMINI_API_KEY", "") or GEMINI_API_KEY
+        self.openai_key = get_secret("OPENAI_API_KEY", "") or OPENAI_API_KEY
 
     def encode_image(self, image_path: str) -> str:
         """將圖片轉為 base64 編碼"""
@@ -36,10 +36,11 @@ class VisionProcessor:
                 "source": "error"
             }
 
-        # 若有 Gemini API Key，直接調用 Gemini 1.5 Flash 多模態模型
-        if self.gemini_key:
+        # 檢查是否有設定 Key
+        current_key = self.gemini_key or get_secret("GEMINI_API_KEY", "")
+        if current_key and current_key.strip():
             try:
-                extracted = self._call_gemini_vision(image_path)
+                extracted = self._call_gemini_vision(image_path, current_key.strip())
                 if extracted and extracted.strip():
                     return {
                         "success": True,
@@ -47,27 +48,33 @@ class VisionProcessor:
                         "source": "gemini-vision"
                     }
             except Exception as e:
-                print(f"[VisionProcessor Warning] Vision API 呼叫失敗: {e}")
+                err_msg = str(e)
+                print(f"[VisionProcessor Error] Gemini 視覺辨識失敗: {err_msg}")
+                return {
+                    "success": False,
+                    "extracted_text": "",
+                    "source": "api-error",
+                    "error": f"Gemini API 連線失敗 ({err_msg})。請確認 API Key 是否已於 Google AI Studio 啟用。"
+                }
 
-        # 若未設定 Key 或 API 失敗，回傳明確標記而非誤導文字
         return {
-            "success": True,
+            "success": False,
             "extracted_text": "",
-            "source": "no-api-key",
-            "warning": "未設定有效 GEMINI_API_KEY，無法辨識截圖文字。請於 Settings -> Variables and secrets 新增 GEMINI_API_KEY。"
+            "source": "no-key",
+            "error": "未偵測到有效的 GEMINI_API_KEY。請至 Streamlit 右下角「⚙️ 管理應用」➔ Settings ➔ Secrets 填入金鑰。"
         }
 
-    def _call_gemini_vision(self, image_path: str) -> str:
+    def _call_gemini_vision(self, image_path: str, api_key: str) -> str:
         """透過 Gemini REST API 進行圖片文字與情境抽取"""
         img_b64 = self.encode_image(image_path)
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={self.gemini_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
         
         headers = {"Content-Type": "application/json"}
         payload = {
             "contents": [
                 {
                     "parts": [
-                        {"text": "請精準讀取並逐字提取這張圖片中的所有文字、對話記錄、發送者、簡訊內容或公文細節。若有網址連結或電話號碼請完整列出。如果圖片中沒有文字，請回答『[未包含文字的非詐騙圖片]』。"},
+                        {"text": "請精準讀取並逐字提取這張圖片中的所有文字、對話記錄、發送者、簡訊內容或公文細節。若有網址連結或電話號碼請完整列出。"},
                         {
                             "inline_data": {
                                 "mime_type": "image/jpeg" if image_path.lower().endswith((".jpg", ".jpeg")) else "image/png",
@@ -79,7 +86,14 @@ class VisionProcessor:
             ]
         }
         
-        resp = requests.post(url, headers=headers, json=payload, timeout=20)
-        resp.raise_for_status()
+        resp = requests.post(url, headers=headers, json=payload, timeout=25)
+        if resp.status_code != 200:
+            error_detail = ""
+            try:
+                error_detail = resp.json().get("error", {}).get("message", resp.text)
+            except Exception:
+                error_detail = resp.text
+            raise RuntimeError(f"HTTP {resp.status_code}: {error_detail}")
+
         data = resp.json()
         return data["candidates"][0]["content"]["parts"][0]["text"]
