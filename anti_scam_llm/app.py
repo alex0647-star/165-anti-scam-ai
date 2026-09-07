@@ -247,6 +247,7 @@ with tab_image:
     col_img_up, col_img_res = st.columns([1.1, 1.3], gap="large")
 
     with col_img_up:
+        st.caption("💡 提示：可直接將圖片檔案【拖曳 (Drag & Drop)】進下方框框，或點擊「Browse files / 上傳」選擇檔案：")
         uploaded_file = st.file_uploader("上傳可疑圖片 (支援 PNG, JPG, JPEG)", type=["png", "jpg", "jpeg"])
         if uploaded_file:
             st.image(uploaded_file, caption="已上傳圖片預覽", use_container_width=True)
