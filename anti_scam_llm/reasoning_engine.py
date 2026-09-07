@@ -41,6 +41,12 @@ class AntiScamForensicEngine:
         user_text = payload.text or ""
         image_desc = ""
 
+        # 動態即時同步金鑰
+        current_k = self.api_key or get_secret("GEMINI_API_KEY", "")
+        if current_k:
+            self.api_key = current_k
+            self.vision_processor.gemini_key = current_k
+
         # 1. 處理影像輸入（若有）
         if payload.image_path:
             vision_res = self.vision_processor.analyze_image(payload.image_path)

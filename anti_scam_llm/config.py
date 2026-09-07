@@ -15,10 +15,16 @@ def get_secret(key: str, default: str = "") -> str:
 
     try:
         import streamlit as st
-        if hasattr(st, "secrets") and key in st.secrets:
-            s_val = str(st.secrets[key]).strip()
-            if s_val:
-                return s_val
+        if hasattr(st, "secrets"):
+            if key in st.secrets:
+                s_val = str(st.secrets[key]).strip()
+                if s_val:
+                    return s_val
+            lower_key = key.lower()
+            if lower_key in st.secrets:
+                s_val = str(st.secrets[lower_key]).strip()
+                if s_val:
+                    return s_val
     except Exception:
         pass
 
@@ -29,7 +35,7 @@ def get_secret(key: str, default: str = "") -> str:
 GEMINI_API_KEY = get_secret("GEMINI_API_KEY", "")
 OPENAI_API_KEY = get_secret("OPENAI_API_KEY", "")
 
-# 預設使用模型 (支援 gemini-1.5-flash, gpt-4o-mini, mock)
+# 預設使用模型
 DEFAULT_MODEL_PROVIDER = get_secret("LLM_PROVIDER", "gemini")
 DEFAULT_MODEL_NAME = get_secret("LLM_MODEL", "gemini-3.6-flash")
 
