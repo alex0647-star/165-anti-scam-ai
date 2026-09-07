@@ -186,7 +186,8 @@ class AntiScamForensicEngine:
         
         # 信任之台灣官方與正派機構網域白名單 (不視為釣魚連結)
         TRUSTED_DOMAINS = [
-            "cht.tw", "gov.tw", "edu.tw", "cathaybk.com.tw", "esunbank.com.tw",
+            "cht.tw", "twm.tw", "taiwanmobile.com", "fet.tw", "fetnet.net",
+            "gov.tw", "edu.tw", "cathaybk.com.tw", "esunbank.com.tw",
             "taipower.com.tw", "water.gov.tw", "post.gov.tw", "fubon.com",
             "ctbcbank.com", "megabank.com.tw", "sinopac.com", "hncb.com.tw",
             "tbb.com.tw", "bot.com.tw", "landbank.com.tw", "momo.com.tw",
