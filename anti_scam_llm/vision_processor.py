@@ -1,14 +1,17 @@
 """多模態影像解析模組 (Vision Processor Module)
 
 處理對話截圖、簡訊截圖與公文圖片，支援：
-1. Gemini 多模態視覺 OCR (支援 gemini-3.6-flash / gemini-flash-latest)
-2. 自動模型降級相容機制
+1. 自動圖片壓縮與最佳化 (避免上傳超時)
+2. Gemini 3.6 多模態視覺 OCR
+3. 自動模型降級相容機制
 """
 
 import os
+import io
 import base64
 from typing import Dict, Any, Optional
 import requests
+from PIL import Image
 from anti_scam_llm.config import GEMINI_API_KEY, OPENAI_API_KEY, get_secret
 
 
@@ -19,12 +22,22 @@ class VisionProcessor:
         self.gemini_key = api_key or get_secret("GEMINI_API_KEY", "") or GEMINI_API_KEY
         self.openai_key = get_secret("OPENAI_API_KEY", "") or OPENAI_API_KEY
 
-    def encode_image(self, image_path: str) -> str:
-        """將圖片轉為 base64 編碼"""
+    def encode_image(self, image_path: str, max_dim: int = 1024) -> str:
+        """自動等比例壓縮並轉為輕量 JPEG base64 編碼，確保秒級傳輸"""
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"找不到指定的圖片檔案: {image_path}")
-        with open(image_path, "rb") as img_file:
-            return base64.b64encode(img_file.read()).decode("utf-8")
+
+        try:
+            with Image.open(image_path) as img:
+                img = img.convert("RGB")
+                img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
+                buffer = io.BytesIO()
+                img.save(buffer, format="JPEG", quality=85)
+                return base64.b64encode(buffer.getvalue()).decode("utf-8")
+        except Exception:
+            # 備用原生讀取
+            with open(image_path, "rb") as img_file:
+                return base64.b64encode(img_file.read()).decode("utf-8")
 
     def analyze_image(self, image_path: str) -> Dict[str, Any]:
         """解析截圖或公文圖片，提取對話與可疑元素"""
@@ -84,7 +97,7 @@ class VisionProcessor:
                         {"text": "請精準讀取並逐字提取這張圖片中的所有文字、對話記錄、發送者、簡訊內容或公文細節。若有網址連結、金額、抽成比例或電話號碼請完整列出。"},
                         {
                             "inline_data": {
-                                "mime_type": "image/jpeg" if image_path.lower().endswith((".jpg", ".jpeg")) else "image/png",
+                                "mime_type": "image/jpeg",
                                 "data": img_b64
                             }
                         }
