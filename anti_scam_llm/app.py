@@ -259,10 +259,12 @@ with tab_image:
         st.subheader("📑 圖片視覺鑑識報告")
         if run_img_btn and uploaded_file:
             with st.spinner("正在進行 OCR 視覺解析與 RAG 鑑識..."):
-                # 暫存圖片進行分析
-                temp_path = os.path.join("anti_scam_llm", f"temp_{uploaded_file.name}")
-                with open(temp_path, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
+                import tempfile
+                # 使用標準跨平台暫存檔案
+                suffix = os.path.splitext(uploaded_file.name)[1]
+                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_f:
+                    tmp_f.write(uploaded_file.getbuffer())
+                    temp_path = tmp_f.name
 
                 try:
                     payload = InputPayload(image_path=temp_path)
