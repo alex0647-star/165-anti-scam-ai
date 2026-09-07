@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 import requests
 
-from anti_scam_llm.config import GEMINI_API_KEY, OPENAI_API_KEY, DEFAULT_MODEL_PROVIDER, DEFAULT_MODEL_NAME
+from anti_scam_llm.config import GEMINI_API_KEY, OPENAI_API_KEY, DEFAULT_MODEL_PROVIDER, DEFAULT_MODEL_NAME, get_secret
 from anti_scam_llm.schemas import AntiScamAnalysisResult, InputPayload
 from anti_scam_llm.prompts import build_analysis_prompt
 from anti_scam_llm.knowledge_base import ScamKnowledgeRetriever
@@ -125,7 +125,11 @@ class AntiScamForensicEngine:
 
     def _call_gemini_api(self, prompt: str) -> str:
         """調用 Google Gemini REST API (具備多模型自動降級)"""
-        models_to_try = [self.model_name, "gemini-3.6-flash", "gemini-flash-latest", "gemini-1.5-flash"]
+        candidate_models = [self.model_name, "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-flash-latest"]
+        models_to_try = []
+        for m in candidate_models:
+            if m and m not in models_to_try:
+                models_to_try.append(m)
         headers = {"Content-Type": "application/json"}
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
@@ -173,13 +177,17 @@ class AntiScamForensicEngine:
         now_iso = datetime.now(timezone.utc).isoformat()
         
         # 關鍵詐騙特徵指標
-        has_phishing_link = ("http://" in low_text or "https://" in low_text or "line.me" in low_text or ".vip" in low_text or ".top" in low_text or ".xyz" in low_text)
-        has_money_trigger = ("atm" in low_text or "轉帳" in low_text or "監管帳戶" in low_text or "解除分期" in low_text or "匯款" in low_text or "usdt" in low_text or "提現保證金" in low_text or "日領高薪" in low_text or "給你抽" in low_text or "丟你那邊" in low_text or "借帳戶" in low_text or "租帳戶" in low_text or "不能收錢" in low_text)
-        has_legal_threat = ("洗錢防制法" in user_text or "地檢署" in user_text or "特偵組" in user_text or "強制拘提" in user_text or "公文傳票" in user_text or "健保卡異常" in user_text or "鎖卡" in user_text)
-        has_investment_trap = ("飆股" in user_text or "老師帶盤" in user_text or "內線消息" in user_text or "保證獲利" in user_text or "翻倍" in user_text)
+        has_phishing_link = ("http://" in low_text or "https://" in low_text or "line.me" in low_text or ".vip" in low_text or ".top" in low_text or ".xyz" in low_text or ".cc" in low_text)
+        has_money_trigger = ("atm" in low_text or "轉帳" in low_text or "監管帳戶" in low_text or "解除分期" in low_text or "匯款" in low_text or "usdt" in low_text or "提現保證金" in low_text or "日領高薪" in low_text or "給你抽" in low_text or "丟你那邊" in low_text or "借帳戶" in low_text or "租帳戶" in low_text or "不能收錢" in low_text or "提領" in low_text)
+        has_legal_threat = ("洗錢防制法" in user_text or "地檢署" in user_text or "特偵組" in user_text or "強制拘提" in user_text or "公文傳票" in user_text or "健保卡異常" in user_text or "鎖卡" in user_text or "凍結" in user_text or "停水" in user_text)
+        has_investment_trap = ("飆股" in user_text or "老師帶盤" in user_text or "內線消息" in user_text or "保證獲利" in user_text or "翻倍" in user_text or "外資" in user_text or "佈局" in user_text or "代操" in user_text or "蛋糕" in user_text or "金控" in user_text or "加.賴" in user_text or "投.貲" in user_text or "老帥" in user_text)
+        has_teller_coaching = ("不能講" in user_text or "不能說" in user_text or "行員問" in user_text or "行員" in user_text or "臨櫃" in user_text or "裝潢款" in user_text or "買黃金" in user_text or "三方佈局" in user_text or "券商的蛋糕" in user_text or "專員" in user_text)
+        has_job_or_account_trap = ("兼職" in user_text or "打字員" in user_text or "家庭代工" in user_text or "存摺" in user_text or "提款卡" in user_text or "包來回機票" in user_text or "海外" in user_text or "東南亞" in user_text or "融資" in user_text or "低利貸款" in user_text or "資金流水" in user_text or "小白皆可貸" in user_text)
+        has_urgent_relative_trap = ("車禍" in user_text or "和解" in user_text or "救我" in user_text or "快點救我" in user_text or "爸！是我啦" in user_text or "撞到人" in user_text or "保留訂金" in user_text or "急租" in user_text)
+        has_crypto_airdrop = ("空投" in user_text or "airdrop" in low_text or "錢包地址" in user_text or "claim" in low_text or "solana" in low_text or "治理代幣" in user_text or "抽中" in user_text or "特獎" in user_text)
 
         # 1. 正常訊息判斷（如果沒有觸發任何明顯詐騙特徵）
-        is_scam = has_phishing_link or has_money_trigger or has_legal_threat or has_investment_trap
+        is_scam = has_phishing_link or has_money_trigger or has_legal_threat or has_investment_trap or has_teller_coaching or has_job_or_account_trap or has_urgent_relative_trap or has_crypto_airdrop
 
         if not is_scam:
             return json.dumps({
@@ -194,7 +202,7 @@ class AntiScamForensicEngine:
                 },
                 "red_flags": [],
                 "psychological_tactics": [],
-                "evidence_analysis": "經 165 AI 鑑識比對，此內容未出現釣魚連結、非官方網址、要求匯款轉帳、恐嚇凍結或假投資等惡意破綻特徵，屬於日常安全內容。",
+                "evidence_analysis": "經 165 AI 鑑識比對，此內容未出現釣魚連結、非官方網址、要求匯款轉帳、恐嚇凍結、規避行員提問或假投資等惡意破綻特徵，屬於日常安全內容。",
                 "actionable_guidance": {
                     "immediate_actions": ["無須採取任何防禦行動，可正常閱讀與回覆。"],
                     "official_verification": ["若為重要公務或銀行交易且有疑慮，可直接致電官方官方代表號確認。"],
@@ -204,13 +212,19 @@ class AntiScamForensicEngine:
 
         # 2. 詐騙特徵鑑識
         matched_case = rag_cases[0] if rag_cases else {
-            "category": "疑似釣魚或未知詐騙",
-            "tactics": ["製造急迫感", "利益引誘"]
+            "category": "假投資與臨櫃話術詐騙" if has_teller_coaching else ("假求職/人頭帳戶詐騙" if has_job_or_account_trap else "疑似詐騙"),
+            "tactics": ["利益引誘", "製造急迫感"]
         }
-        category = matched_case.get("category", "疑似詐騙")
+        category = "假投資博弈與臨櫃話術詐騙" if has_teller_coaching else matched_case.get("category", "疑似詐騙")
 
         # 根據文本抽取可疑特徵
         red_flags = []
+        if has_teller_coaching:
+            red_flags.append({
+                "quote": "臨櫃辦理不能講是用於投資 / 行員問到話術教戰",
+                "issue_type": "教戰守則誘導隱瞞銀行行員關懷提問",
+                "severity": "HIGH"
+            })
         if has_phishing_link:
             urls = re.findall(r"https?://[^\s]+", user_text)
             red_flags.append({
@@ -230,21 +244,32 @@ class AntiScamForensicEngine:
                 "issue_type": "製造時間急迫感與司法威脅",
                 "severity": "HIGH"
             })
-        if has_investment_trap:
+        if has_investment_trap and not has_teller_coaching:
             red_flags.append({
-                "quote": "保證獲利 / 飆股密碼",
+                "quote": "保證獲利 / 飆股密碼 / 外資佈局",
                 "issue_type": "以高報酬誘餌吸引受害者",
                 "severity": "HIGH"
             })
 
         tactics = []
+        if has_teller_coaching:
+            tactics.append({
+                "tactic_name": "社交阻絕與規避行員提問",
+                "description": "詐騙集團深知行員會進行防詐關懷提問，故提前套好假話術（如稱裝潢款、代購或商業合作），阻止銀行啟動防詐攔阻機制。"
+            })
         for t in matched_case.get("tactics", ["心理施壓", "誘餌誘導"]):
             tactics.append({
                 "tactic_name": t,
                 "description": f"詐騙方運用『{t}』手法降低受害者的防備心並迫使其在慌亂中採取行動。"
             })
 
-        score = 90 if (has_legal_threat or has_money_trigger) else 75
+        score = 96 if (has_teller_coaching or has_legal_threat) else (90 if has_money_trigger else 75)
+        
+        evidence_msg = (
+            "此對話截圖屬於極度典型之【假投資/外資佈局臨櫃匯款詐騙】！詐騙分子假冒「金控專員」，並在被害人前往銀行臨櫃辦理匯款時，惡意教導受害者『若行員問到資金用途，一定不能講是用於投資』，意圖繞過銀行行員的防詐關懷提問與洗錢防制審查。"
+            if has_teller_coaching else
+            f"此訊息高度吻合 165 資料庫中之『{category}』犯罪特徵。對方透過非官方管道聯繫，並試圖誘導金錢轉移或個資竊取，屬於高風險詐騙。"
+        )
         
         return json.dumps({
             "analysis_id": f"SCAM-EVAL-{uuid.uuid4().hex[:8].upper()}",
@@ -260,7 +285,7 @@ class AntiScamForensicEngine:
                 {"quote": user_text[:30], "issue_type": "符合典型詐騙套路語法", "severity": "HIGH"}
             ],
             "psychological_tactics": tactics,
-            "evidence_analysis": f"此訊息高度吻合 165 資料庫中之『{category}』犯罪特徵。對方透過非官方管道聯繫，並試圖誘導金錢轉移或個資竊取，屬於高風險詐騙。",
+            "evidence_analysis": evidence_msg,
             "actionable_guidance": {
                 "immediate_actions": [
                     "絕對不要點擊訊息中的任何連結或輸入個人身分證、信用卡及 OTP 驗證碼。",

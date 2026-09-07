@@ -37,7 +37,7 @@ OPENAI_API_KEY = get_secret("OPENAI_API_KEY", "")
 
 # 預設使用模型
 DEFAULT_MODEL_PROVIDER = get_secret("LLM_PROVIDER", "gemini")
-DEFAULT_MODEL_NAME = get_secret("LLM_MODEL", "gemini-3.6-flash")
+DEFAULT_MODEL_NAME = get_secret("LLM_MODEL", "gemini-3.5-flash")
 
 # 風險分級門檻標準
 RISK_THRESHOLDS = {

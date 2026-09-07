@@ -22,7 +22,7 @@ class VisionProcessor:
         self.gemini_key = api_key or get_secret("GEMINI_API_KEY", "") or GEMINI_API_KEY
         self.openai_key = get_secret("OPENAI_API_KEY", "") or OPENAI_API_KEY
 
-    def encode_image(self, image_path: str, max_dim: int = 1024) -> str:
+    def encode_image(self, image_path: str, max_dim: int = 800) -> str:
         """自動等比例壓縮並轉為輕量 JPEG base64 編碼，確保秒級傳輸"""
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"找不到指定的圖片檔案: {image_path}")
@@ -32,7 +32,7 @@ class VisionProcessor:
                 img = img.convert("RGB")
                 img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
                 buffer = io.BytesIO()
-                img.save(buffer, format="JPEG", quality=85)
+                img.save(buffer, format="JPEG", quality=80)
                 return base64.b64encode(buffer.getvalue()).decode("utf-8")
         except Exception:
             # 備用原生讀取
@@ -53,8 +53,8 @@ class VisionProcessor:
         current_key = self.gemini_key or get_secret("GEMINI_API_KEY", "")
         if current_key and current_key.strip():
             current_key = current_key.strip()
-            # 依序嘗試最新可用的多模態模型
-            models_to_try = ["gemini-3.6-flash", "gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-1.5-flash"]
+            # 依序嘗試最新可用的多模態模型 (優先採用極速且穩定的 3.5-flash)
+            models_to_try = ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-flash-latest"]
             last_err = ""
 
             for model_name in models_to_try:
@@ -74,7 +74,7 @@ class VisionProcessor:
                 "success": False,
                 "extracted_text": "",
                 "source": "api-error",
-                "error": f"Gemini API 視覺辨識錯誤: {last_err}"
+                "error": f"Gemini API 視覺辨識失敗: {last_err}"
             }
 
         return {
@@ -84,7 +84,7 @@ class VisionProcessor:
             "error": "未設定有效的 GEMINI_API_KEY。請至 Streamlit 右下角「⚙️ 管理應用」➔ Settings ➔ Secrets 填入金鑰。"
         }
 
-    def _call_gemini_vision(self, image_path: str, api_key: str, model_name: str = "gemini-3.6-flash") -> str:
+    def _call_gemini_vision(self, image_path: str, api_key: str, model_name: str = "gemini-3.5-flash") -> str:
         """透過 Gemini REST API 進行圖片文字與情境抽取"""
         img_b64 = self.encode_image(image_path)
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
@@ -106,7 +106,7 @@ class VisionProcessor:
             ]
         }
         
-        resp = requests.post(url, headers=headers, json=payload, timeout=30)
+        resp = requests.post(url, headers=headers, json=payload, timeout=25)
         if resp.status_code != 200:
             error_detail = ""
             try:

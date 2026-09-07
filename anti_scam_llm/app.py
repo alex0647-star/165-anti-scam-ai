@@ -100,7 +100,7 @@ with st.sidebar:
     
     st.markdown("### 🔑 API 金鑰狀態")
     if active_gemini_key:
-        st.success("🟢 **Gemini 3.6 視覺 OCR：已連線**")
+        st.success("🟢 **Gemini 3.5 / 3.6 視覺 OCR：已連線**")
         st.caption(f"金鑰前綴: `{active_gemini_key[:8]}...`")
     else:
         st.warning("⚠️ **Gemini OCR：未偵測到金鑰**")
@@ -257,8 +257,21 @@ with tab_image:
                     temp_path = tmp_f.name
 
                 try:
-                    payload = InputPayload(image_path=temp_path)
-                    img_result = engine.analyze(payload)
+                    fresh_engine = AntiScamForensicEngine(api_key=active_gemini_key if active_gemini_key else None)
+                    v_res = fresh_engine.vision_processor.analyze_image(temp_path)
+                    
+                    if v_res.get("success"):
+                        extracted_ocr = v_res.get("extracted_text", "")
+                        st.success(f"🟢 **多模態 OCR 辨識成功**（辨識核心：`{v_res.get('source')}`）")
+                        with st.expander("📝 展開檢視 OCR 擷取出的對話與文字內容", expanded=True):
+                            st.text_area("辨識文字", value=extracted_ocr, height=120, disabled=True)
+                        
+                        payload = InputPayload(text=extracted_ocr, image_path=temp_path)
+                    else:
+                        st.warning(f"⚠️ OCR 擷取提示: {v_res.get('error', '未能提取文字')}")
+                        payload = InputPayload(image_path=temp_path)
+
+                    img_result = fresh_engine.analyze(payload)
                     ra = img_result.risk_assessment
                     
                     score = ra.risk_score
@@ -296,6 +309,17 @@ with tab_image:
                                 <strong>[{rf.severity.value}]</strong> 「<code>{rf.quote}</code>」 ➔ <em>{rf.issue_type}</em>
                             </div>
                             """, unsafe_allow_html=True)
+
+                    if img_result.actionable_guidance.immediate_actions or img_result.actionable_guidance.official_verification:
+                        with st.expander("🛡️ 查看官方防護與處置指南", expanded=True):
+                            if img_result.actionable_guidance.immediate_actions:
+                                st.markdown("**🚨 切勿進行：**")
+                                for act in img_result.actionable_guidance.immediate_actions:
+                                    st.markdown(f"- ❌ {act}")
+                            if img_result.actionable_guidance.official_verification:
+                                st.markdown("**📞 正當查證管道：**")
+                                for ver in img_result.actionable_guidance.official_verification:
+                                    st.markdown(f"- ✅ {ver}")
 
                     if img_result.actionable_guidance.recommended_safe_reply:
                         st.info(f"💡 建議防禦話術：{img_result.actionable_guidance.recommended_safe_reply}")
