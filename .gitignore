@@ -1,6 +1,8 @@
-﻿__pycache__/
+__pycache__/
 *.pyc
 .env
 .system_generated/
 finetune/outputs/
 *.zip
+*KEY*.txt
+*key*.txt
