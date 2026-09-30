@@ -43,47 +43,103 @@ except ImportError:
     from knowledge_base import KNOWLEDGE_BASE_ENTRIES, ScamKnowledgeRetriever
     from config import get_secret
 
-# 自訂 CSS 樣式
+# 自訂 CSS 樣式 (深色/淺色模式全適配高對比排版)
 st.markdown("""
 <style>
     .main-title {
         font-size: 2.2rem;
         font-weight: 800;
-        color: #1E3A8A;
+        color: #38BDF8 !important;
         margin-bottom: 0.2rem;
     }
     .subtitle {
         font-size: 1.05rem;
-        color: #4B5563;
+        color: #94A3B8 !important;
         margin-bottom: 1.5rem;
     }
     .metric-card {
-        background-color: #F8FAFC;
+        background-color: rgba(255, 255, 255, 0.05) !important;
         border-radius: 10px;
         padding: 1rem;
-        border: 1px solid #E2E8F0;
+        border: 1px solid rgba(255, 255, 255, 0.12) !important;
         text-align: center;
     }
     .red-flag-box {
-        background-color: #FEF2F2;
-        border-left: 4px solid #EF4444;
-        padding: 0.75rem 1rem;
-        margin-bottom: 0.5rem;
-        border-radius: 4px;
+        background-color: rgba(239, 68, 68, 0.15) !important;
+        border: 1px solid rgba(239, 68, 68, 0.4) !important;
+        border-left: 5px solid #EF4444 !important;
+        color: #F8FAFC !important;
+        padding: 0.85rem 1.1rem !important;
+        margin-bottom: 0.65rem !important;
+        border-radius: 6px !important;
+        font-size: 0.98rem !important;
+        line-height: 1.6 !important;
+    }
+    .red-flag-box strong {
+        color: #F87171 !important;
+        font-weight: 700 !important;
+        font-size: 1.0rem !important;
+    }
+    .red-flag-box code {
+        color: #FEF08A !important;
+        background-color: rgba(0, 0, 0, 0.5) !important;
+        padding: 0.18rem 0.5rem !important;
+        border-radius: 4px !important;
+        font-size: 0.95rem !important;
+        border: 1px solid rgba(254, 240, 138, 0.3) !important;
+    }
+    .red-flag-box em {
+        color: #E2E8F0 !important;
+        font-style: normal !important;
+        font-weight: 600 !important;
     }
     .tactic-box {
-        background-color: #FFFBEB;
-        border-left: 4px solid #F59E0B;
-        padding: 0.75rem 1rem;
-        margin-bottom: 0.5rem;
-        border-radius: 4px;
+        background-color: rgba(245, 158, 11, 0.15) !important;
+        border: 1px solid rgba(245, 158, 11, 0.4) !important;
+        border-left: 5px solid #F59E0B !important;
+        color: #F8FAFC !important;
+        padding: 0.85rem 1.1rem !important;
+        margin-bottom: 0.65rem !important;
+        border-radius: 6px !important;
+        font-size: 0.98rem !important;
+        line-height: 1.6 !important;
+    }
+    .tactic-box strong {
+        color: #FBBF24 !important;
+    }
+    .tactic-box code {
+        color: #FEF08A !important;
+        background-color: rgba(0, 0, 0, 0.5) !important;
+        padding: 0.18rem 0.5rem !important;
+        border-radius: 4px !important;
+    }
+    .tactic-box em {
+        color: #E2E8F0 !important;
+        font-style: normal !important;
     }
     .safe-box {
-        background-color: #F0FDF4;
-        border-left: 4px solid #22C55E;
-        padding: 0.75rem 1rem;
-        margin-bottom: 0.5rem;
-        border-radius: 4px;
+        background-color: rgba(34, 197, 94, 0.15) !important;
+        border: 1px solid rgba(34, 197, 94, 0.4) !important;
+        border-left: 5px solid #22C55E !important;
+        color: #F8FAFC !important;
+        padding: 0.85rem 1.1rem !important;
+        margin-bottom: 0.65rem !important;
+        border-radius: 6px !important;
+        font-size: 0.98rem !important;
+        line-height: 1.6 !important;
+    }
+    .safe-box strong {
+        color: #4ADE80 !important;
+    }
+    .safe-box code {
+        color: #86EFAC !important;
+        background-color: rgba(0, 0, 0, 0.5) !important;
+        padding: 0.18rem 0.5rem !important;
+        border-radius: 4px !important;
+    }
+    .safe-box em {
+        color: #E2E8F0 !important;
+        font-style: normal !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -190,11 +246,11 @@ with tab_text:
 
                 # 風險總覽卡片
                 st.markdown(f"""
-                <div style='background-color:{badge_color}15; border-left: 6px solid {badge_color}; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;'>
-                    <h3 style='color:{badge_color}; margin:0;'>{status_title}</h3>
-                    <p style='margin: 0.5rem 0 0 0; font-size: 1.1rem;'>
-                        <b>量化風險指數：</b> <code>{score} / 100</code> &nbsp;|&nbsp; 
-                        <b>判定手法類型：</b> <code>{ra.primary_scam_type}</code>
+                <div style='background-color:{badge_color}18; border: 1px solid {badge_color}44; border-left: 6px solid {badge_color}; padding: 1rem; border-radius: 8px; margin-bottom: 1.2rem;'>
+                    <h3 style='color:{badge_color}; margin:0; font-size:1.35rem;'>{status_title}</h3>
+                    <p style='margin: 0.6rem 0 0 0; font-size: 1.05rem; color: #F8FAFC;'>
+                        <b style='color:#CBD5E1;'>量化風險指數：</b> <code style='color:#FEF08A; background-color:rgba(0,0,0,0.5); padding:0.18rem 0.5rem; border-radius:4px; font-weight:bold;'>{score} / 100</code> &nbsp;|&nbsp; 
+                        <b style='color:#CBD5E1;'>判定手法類型：</b> <code style='color:#38BDF8; background-color:rgba(0,0,0,0.5); padding:0.18rem 0.5rem; border-radius:4px; font-weight:bold;'>{ra.primary_scam_type}</code>
                     </p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -290,11 +346,11 @@ with tab_image:
                         status_title = "🔴 極度危險 (高機率詐騙)"
 
                     st.markdown(f"""
-                    <div style='background-color:{badge_color}15; border-left: 6px solid {badge_color}; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;'>
-                        <h3 style='color:{badge_color}; margin:0;'>{status_title}</h3>
-                        <p style='margin: 0.5rem 0 0 0; font-size: 1.1rem;'>
-                            <b>量化風險指數：</b> <code>{score} / 100</code> &nbsp;|&nbsp; 
-                            <b>判定手法類型：</b> <code>{ra.primary_scam_type}</code>
+                    <div style='background-color:{badge_color}18; border: 1px solid {badge_color}44; border-left: 6px solid {badge_color}; padding: 1rem; border-radius: 8px; margin-bottom: 1.2rem;'>
+                        <h3 style='color:{badge_color}; margin:0; font-size:1.35rem;'>{status_title}</h3>
+                        <p style='margin: 0.6rem 0 0 0; font-size: 1.05rem; color: #F8FAFC;'>
+                            <b style='color:#CBD5E1;'>量化風險指數：</b> <code style='color:#FEF08A; background-color:rgba(0,0,0,0.5); padding:0.18rem 0.5rem; border-radius:4px; font-weight:bold;'>{score} / 100</code> &nbsp;|&nbsp; 
+                            <b style='color:#CBD5E1;'>判定手法類型：</b> <code style='color:#38BDF8; background-color:rgba(0,0,0,0.5); padding:0.18rem 0.5rem; border-radius:4px; font-weight:bold;'>{ra.primary_scam_type}</code>
                         </p>
                     </div>
                     """, unsafe_allow_html=True)
