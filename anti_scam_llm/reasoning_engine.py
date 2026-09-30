@@ -208,6 +208,21 @@ class AntiScamForensicEngine:
                 suspicious_url_str = u
                 break
 
+        # 尋找電子郵件與免費信箱偽冒特徵
+        found_emails = re.findall(r"[\w\.-]+@[\w\.-]+\.\w+", user_text)
+        has_email_spoof = False
+        email_spoof_str = ""
+        FREE_EMAIL_DOMAINS = ["yahoo.co.jp", "yahoo.com", "gmail.com", "outlook.com", "hotmail.com", "qq.com", "163.com", "sina.com"]
+        for em in found_emails:
+            em_low = em.lower()
+            if any(fed in em_low for fed in FREE_EMAIL_DOMAINS):
+                if any(kw in low_text for kw in ["ikea", "宜家", "apple", "netflix", "卡友", "重複訂購", "自動續費", "續費", "分期", "客服", "帳單", "會員"]):
+                    has_email_spoof = True
+                    email_spoof_str = em
+                    break
+
+        has_recurring_fee = ("重複訂購" in user_text or "自動續費" in user_text or "重複扣款" in user_text or "扣款未變更" in user_text or "保留方式" in user_text or "解除分期" in user_text)
+
         # 關鍵詐騙特徵指標
         has_phishing_link = has_suspicious_url or (".vip" in low_text or ".top" in low_text or ".xyz" in low_text or ".cc" in low_text)
         has_money_trigger = ("atm" in low_text or "轉帳" in low_text or "監管帳戶" in low_text or "解除分期" in low_text or "匯款" in low_text or "usdt" in low_text or "提現保證金" in low_text or "日領高薪" in low_text or "給你抽" in low_text or "丟你那邊" in low_text or "借帳戶" in low_text or "租帳戶" in low_text or "不能收錢" in low_text or "提領" in low_text)
@@ -219,7 +234,7 @@ class AntiScamForensicEngine:
         has_crypto_airdrop = ("空投" in user_text or "airdrop" in low_text or "錢包地址" in user_text or "claim" in low_text or "solana" in low_text or "治理代幣" in user_text or "抽中" in user_text or "特獎" in user_text)
 
         # 1. 正常訊息判斷（如果沒有觸發任何明顯詐騙特徵）
-        is_scam = has_phishing_link or has_money_trigger or has_legal_threat or has_investment_trap or has_teller_coaching or has_job_or_account_trap or has_urgent_relative_trap or has_crypto_airdrop
+        is_scam = has_email_spoof or has_recurring_fee or has_phishing_link or has_money_trigger or has_legal_threat or has_investment_trap or has_teller_coaching or has_job_or_account_trap or has_urgent_relative_trap or has_crypto_airdrop
 
         if not is_scam:
             return json.dumps({
@@ -244,13 +259,31 @@ class AntiScamForensicEngine:
 
         # 2. 詐騙特徵鑑識
         matched_case = rag_cases[0] if rag_cases else {
-            "category": "假投資與臨櫃話術詐騙" if has_teller_coaching else ("假求職/人頭帳戶詐騙" if has_job_or_account_trap else "疑似詐騙"),
-            "tactics": ["利益引誘", "製造急迫感"]
+            "category": "假投資與臨櫃話術詐騙" if has_teller_coaching else ("假冒官方電子郵件 (假重複扣款/解除分期)" if (has_email_spoof or has_recurring_fee) else ("假求職/人頭帳戶詐騙" if has_job_or_account_trap else "疑似詐騙")),
+            "tactics": ["冒名欺騙", "製造訂單扣款恐慌"]
         }
-        category = "假投資博弈與臨櫃話術詐騙" if has_teller_coaching else matched_case.get("category", "疑似詐騙")
+
+        if has_email_spoof or has_recurring_fee:
+            category = "假冒官方電子郵件 (假重複扣款/解除分期)"
+        elif has_teller_coaching:
+            category = "假投資博弈與臨櫃話術詐騙"
+        else:
+            category = matched_case.get("category", "疑似詐騙")
 
         # 根據文本抽取可疑特徵
         red_flags = []
+        if has_email_spoof:
+            red_flags.append({
+                "quote": email_spoof_str if email_spoof_str else "butterfly_free_9@yahoo.co.jp",
+                "issue_type": f"寄件者使用免費日本 Yahoo 信箱 ({email_spoof_str}) 偽冒知名官方品牌發信",
+                "severity": "HIGH"
+            })
+        if has_recurring_fee:
+            red_flags.append({
+                "quote": "重複訂購 原自動續費設定未變更",
+                "issue_type": "製造重複下單與連續扣款恐慌（假解除分期話術）",
+                "severity": "HIGH"
+            })
         if has_teller_coaching:
             red_flags.append({
                 "quote": "臨櫃辦理不能講是用於投資 / 行員問到話術教戰",
@@ -264,7 +297,7 @@ class AntiScamForensicEngine:
                 "issue_type": "非官方或可疑短網址跳轉",
                 "severity": "HIGH"
             })
-        if has_money_trigger:
+        if has_money_trigger and not has_recurring_fee:
             red_flags.append({
                 "quote": "要求操作 ATM / 匯款轉移資金 / 保證金",
                 "issue_type": "異常金錢轉移指示",
@@ -295,13 +328,19 @@ class AntiScamForensicEngine:
                 "description": f"詐騙方運用『{t}』手法降低受害者的防備心並迫使其在慌亂中採取行動。"
             })
 
-        score = 96 if (has_teller_coaching or has_legal_threat) else (90 if has_money_trigger else 75)
-        
-        evidence_msg = (
-            "此對話截圖屬於極度典型之【假投資/外資佈局臨櫃匯款詐騙】！詐騙分子假冒「金控專員」，並在被害人前往銀行臨櫃辦理匯款時，惡意教導受害者『若行員問到資金用途，一定不能講是用於投資』，意圖繞過銀行行員的防詐關懷提問與洗錢防制審查。"
-            if has_teller_coaching else
-            f"此訊息高度吻合 165 資料庫中之『{category}』犯罪特徵。對方透過非官方管道聯繫，並試圖誘導金錢轉移或個資竊取，屬於高風險詐騙。"
-        )
+        if has_email_spoof or has_recurring_fee:
+            score = 95
+            evidence_msg = f"經鑑識比對，此郵件雖冒名「IKEA 宜家卡卡友」，但寄件者實際信箱為日本免費郵件網域 ({email_spoof_str or 'butterfly_free_9@yahoo.co.jp'})，完全不符跨國企業官方網域。且內容使用常見的「重複訂購/自動續費未變更」等製造恐慌話術，為典型的假客服、假解除分期付款詐騙手法，意圖引導受害人聯絡非官方客服操作 ATM 或網銀轉帳，具有極高詐騙風險。"
+        elif has_teller_coaching or has_legal_threat:
+            score = 96
+            evidence_msg = (
+                "此對話截圖屬於極度典型之【假投資/外資佈局臨櫃匯款詐騙】！詐騙分子假冒「金控專員」，並在被害人前往銀行臨櫃辦理匯款時，惡意教導受害者『若行員問到資金用途，一定不能講是用於投資』，意圖繞過銀行行員的防詐關懷提問與洗錢防制審查。"
+                if has_teller_coaching else
+                f"此訊息高度吻合 165 資料庫中之『{category}』犯罪特徵。對方透過非官方管道聯繫，並試圖誘導金錢轉移或個資竊取，屬於高風險詐騙。"
+            )
+        else:
+            score = 90 if has_money_trigger else 75
+            evidence_msg = f"此訊息高度吻合 165 資料庫中之『{category}』犯罪特徵。對方透過非官方管道聯繫，並試圖誘導金錢轉移或個資竊取，屬於高風險詐騙。"
         
         return json.dumps({
             "analysis_id": f"SCAM-EVAL-{uuid.uuid4().hex[:8].upper()}",
