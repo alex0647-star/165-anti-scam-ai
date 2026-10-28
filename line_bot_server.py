@@ -36,8 +36,8 @@ from anti_scam_llm.knowledge_base import (
 from anti_scam_llm.dataset import GOLDEN_TEST_DATASET
 
 # LINE 金鑰設定（可透過環境變數或直接在此填入）
-LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "9/4xIUDnor0G4WeoSqKd86N65J8mrFZrYVAAdApKP16pYBgQ18VjsSRU6gIjyPGVt8yCYpFPyE3teaH8Mmc3Z1JYVCXq8IY6s5sEaiUSnKJIhe788Fv6swVu2Mjz0B2VOlk0JjTCfj5IhSlLx390iAdB04t89/1O/w1cDnyilFU=")
-LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "c6250af46d9081337b2aa791bd198e74")
+LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "pxYMYhSgKjTGtDhFcVnnDmWCy5jImABGE6lds8v3H/5v+9Nz6JQbVWEYpIxBHVLL0jjp79/4iMzMOlzWDnTu39WWPb1H8oAUii5ZH2GQTwqybfw+E7APl0wQ/N21dW6UzDG/TUheqsY81hINHXVecgdB04t89/1O/w1cDnyilFU=")
+LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "f31f835ea4c677afbea367442cbc01f2")
 
 app = FastAPI(title="165 AI 防詐騙 Web & LINE Bot 伺服器")
 engine = AntiScamForensicEngine()
