@@ -56,8 +56,8 @@ class AntiScamForensicEngine:
             text_result = self.analyze(InputPayload(text=combined_txt), _skip_video_hook=True)
             # 融合影片深偽分數與文字詐騙分數
             final_score = max(v_res.get("scam_risk_score", 10), text_result.risk_assessment.risk_score)
-            # 若影片明確為官方頻道且無深偽/詐騙關鍵字，保持低風險
-            if v_res.get("is_official_channel") and not v_res.get("matched_scam_keywords") and not v_res.get("matched_ai_keywords"):
+            # 若影片明確為官方頻道且無任何詐騙引流關鍵字，保持低風險
+            if v_res.get("is_official_channel") and not v_res.get("matched_scam_keywords"):
                 final_score = 5
             v_res["scam_risk_score"] = final_score
             # 合併文字鑑識紅旗至影片紅旗清單

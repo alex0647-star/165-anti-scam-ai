@@ -34,17 +34,17 @@ except ImportError:
 
 # 台灣常見遭 AI Deepfake 換臉或語音合成冒用之名人清單
 CELEBRITY_TARGETS = [
-    "黃仁勳", "張忠謀", "蘇姿丰", "郭台銘", "馬斯克", "Elon Musk", "Jensen Huang",
+    "黃仁勳", "黄仁勋", "張忠謀", "张忠谋", "蘇姿丰", "苏姿丰", "郭台銘", "馬斯克", "Elon Musk", "Jensen Huang",
     "謝金河", "胡睿涵", "陳文茜", "施昇輝", "闕又上", "阮慕驊", "陳重銘", "股癌",
     "吳淡如", "于美人", "蔡康永", "林志玲", "周杰倫", "劉德華",
-    "蔡英文", "賴清德", "韓國瑜", "盧秀燕", "蔣萬安", "彭淮南", "楊金龍"
+    "蔡英文", "賴清德", "韓國瑜", "盧秀燕", "蔣萬安", "彭淮南", "楊金龍", "魏哲家"
 ]
 
 # 官方可信賴之新聞媒體、企業與機構頻道關鍵字
 OFFICIAL_CHANNEL_KEYWORDS = [
     "台視", "中視", "華視", "民視", "公視", "TVBS", "東森", "三立", "年代", "壹電視", "中天", "寰宇",
     "非凡", "天下雜誌", "商業周刊", "今周刊", "財訊", "鏡新聞", "聯合報", "自由時報", "中央社", "ETtoday",
-    "NVIDIA", "TSMC", "台積電", "鴻海", "警政署", "165", "刑事局", "行政院", "經濟部", "金管會"
+    "NVIDIA", "TSMC", "台積電", "鴻海", "警政署", "165", "刑事局", "刑事警察局", "CIB", "行政院", "經濟部", "金管會"
 ]
 
 # AI 生成 / 深偽換臉相關標籤與特徵詞
@@ -524,20 +524,24 @@ class VideoForensicProcessor:
         scam_risk_score = 10
         forensic_flags: List[Dict[str, str]] = []
 
-        # 1. 名人肖像冒用 + 非官方免洗頻道 + 投資/贈書引流 (最典型台灣 AI 換臉詐騙短影音)
-        if mentioned_celebs and not is_official_channel and (matched_scam_kws or matched_ai_kws or not author_name):
+        # 1. 名人肖像冒用 + (非官方免洗頻道 或 搭配投資/贈書/加LINE詐騙引流話術)
+        if mentioned_celebs and (not is_official_channel or matched_scam_kws) and (matched_scam_kws or matched_ai_kws or not author_name):
             deepfake_prob = max(deepfake_prob, 94)
             scam_risk_score = max(scam_risk_score, 96)
-            celeb_str = "、".join(mentioned_celebs[:3])
-            ch_label = f"「{author_name}」（非官方認證頻道）" if author_name else "未認證之匿名/免洗帳號"
+            celeb_str = "、".join(dict.fromkeys(mentioned_celebs))
+            ch_label = (
+                f"「{author_name}」（遭擷取畫面搭配詐騙引流文案）"
+                if (is_official_channel and matched_scam_kws)
+                else (f"「{author_name}」（非官方認證頻道）" if author_name else "未認證之匿名/免洗帳號")
+            )
             forensic_flags.append({
                 "severity": "HIGH",
-                "quote": f"影片人物：{celeb_str} ｜ 發布頻道：{ch_label}",
-                "issue_type": f"典型【AI Deepfake 換臉/語音克隆冒用名人詐騙】：畫面或標題冒用「{celeb_str}」名義，但發布來源並非官方認證媒體或本人頻道，極高機率為 AI 合成影像與配音！"
+                "quote": f"影片人物：{celeb_str} ｜ 來源檢核：{ch_label}",
+                "issue_type": f"典型【AI Deepfake 換臉/語音克隆冒用名人詐騙】：畫面或標題冒用「{celeb_str}」名義搭配飆股/贈書/加LINE引流，極高機率為 AI 合成影像或盜用片段改製配音！"
             })
 
         # 2. 明確檢出 AI 生成 / Deepfake 合成標籤或特徵
-        if matched_ai_kws:
+        if matched_ai_kws and (not is_official_channel or matched_scam_kws):
             deepfake_prob = max(deepfake_prob, 88)
             scam_risk_score = max(scam_risk_score, 85 if matched_scam_kws else 72)
             forensic_flags.append({
@@ -547,7 +551,7 @@ class VideoForensicProcessor:
             })
 
         # 3. 電腦視覺高頻紋理與邊緣偽影異常
-        if visual_metrics.get("edge_artifact_anomaly"):
+        if visual_metrics.get("edge_artifact_anomaly") and (not is_official_channel or matched_scam_kws):
             deepfake_prob = max(deepfake_prob, 78 if (matched_scam_kws or mentioned_celebs) else 45)
             for v_note in visual_metrics.get("visual_notes", []):
                 if matched_scam_kws or mentioned_celebs or matched_ai_kws:
@@ -567,10 +571,11 @@ class VideoForensicProcessor:
                 "issue_type": "短影音字幕或資訊欄出現典型「免費贈書 / 領取飆股名單 / 點擊連結加 LINE」詐騙引流話術，常搭配 AI 換臉名人或 AI 數字人主播行騙"
             })
 
-        # 5. 若為知名官方新聞台/企業頻道且無詐騙引流詞，判定為安全官方影音
-        if is_official_channel and not matched_scam_kws and not matched_ai_kws:
+        # 5. 若為知名官方新聞台/警政署165/企業頻道且無任何詐騙引流詞，判定為安全官方宣導或正常新聞影音
+        if is_official_channel and not matched_scam_kws:
             deepfake_prob = 5
             scam_risk_score = 5
+            forensic_flags = []
 
         if scam_risk_score >= 80 or deepfake_prob >= 80:
             verdict_title = "🔴 高風險 AI 深偽 / 詐騙引流影片"

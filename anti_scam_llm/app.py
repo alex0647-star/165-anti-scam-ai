@@ -436,16 +436,16 @@ with tab_video:
         vid_sample_triggered = False
 
         if v_btn_cols[0].button("🎭 假黃仁勳 AI 換臉報明牌", use_container_width=True):
-            st.session_state["video_url_input"] = "https://www.youtube.com/watch?v=aqz-KE-bpKQ"
+            st.session_state["video_url_input"] = "https://www.youtube.com/watch?v=PU2lJrpITs8"
             st.session_state["video_context_input"] = "【AI換臉深偽測試】黃仁勳最新內部演講：台灣散戶最後翻身機會！免費領取下半年 AI 飆股名單與公益贈書，請點擊下方說明欄連結加助教 LINE：peakchaser116"
             vid_sample_triggered = True
         if v_btn_cols[1].button("🤖 AI 數字人主播引流短影音", use_container_width=True):
-            st.session_state["video_url_input"] = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+            st.session_state["video_url_input"] = "https://www.youtube.com/watch?v=KGb71MV4-3E"
             st.session_state["video_context_input"] = "【AI生成主播 HeyGen 深偽短影音】張忠謀親授退休理財密碼，保證獲利 60% 以上，名額有限請私訊領取代碼加 LINE"
             vid_sample_triggered = True
         if v_btn_cols[2].button("✅ 正常官方防詐宣導影片", use_container_width=True):
-            st.session_state["video_url_input"] = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-            st.session_state["video_context_input"] = "【台視新聞 TTV News 官方頻道】內政部警政署 165 反詐騙宣導：提醒民眾小心網路投資詐騙，遇可疑訊息請撥打 165 專線查證。"
+            st.session_state["video_url_input"] = "https://www.youtube.com/watch?v=ygdhFBQWiz0"
+            st.session_state["video_context_input"] = "【內政部警政署 CIB 刑事警察局官方頻道】165 反詐騙宣導：提醒民眾小心網路 AI 深偽換臉與假投資詐騙，遇可疑訊息請撥打 165 專線查證。"
             vid_sample_triggered = True
 
         vid_url_val = st.text_input(
@@ -531,7 +531,7 @@ with tab_video:
                     f"- **📺 來源平台**：`{vr.get('platform')}`\n"
                     f"- **📝 影片標題**：`{vr.get('title') or '未偵測到標題'}`\n"
                     f"- **👤 發布頻道**：`{vr.get('author_name') or '未公開 / 匿名帳號'}` "
-                    f"{'🟢 *(已確認為官方媒體/企業頻道)*' if vr.get('is_official_channel') else '⚠️ *(非官方認證媒體頻道)*'}\n"
+                    f"{('🟢 *(已確認為官方媒體/機構頻道)*' if v_score <= 30 else '⚠️ *(遭擷取畫面搭配詐騙引流文案)*') if vr.get('is_official_channel') else '⚠️ *(非官方認證媒體頻道)*'}\n"
                     f"- **🔬 人臉/背景高頻紋理比值**：`{vm.get('skin_smoothing_ratio', 1.0)}x` "
                     f"*(>1.65x 代表人像區疑有 AI 換臉平滑濾鏡或合成模糊)*\n"
                     f"- **⚡ 跨影格時序閃爍指標**：`{vm.get('temporal_flicker_score', 0.0)}`"

@@ -375,14 +375,14 @@
 
         function fillVideoSample(type) {
             if (type === 'jensen') {
-                document.getElementById('input-video-url').value = "https://www.youtube.com/watch?v=aqz-KE-bpKQ";
+                document.getElementById('input-video-url').value = "https://www.youtube.com/watch?v=PU2lJrpITs8";
                 document.getElementById('input-video-ctx').value = "【AI換臉深偽測試】黃仁勳最新內部演講：台灣散戶最後翻身機會！免費領取下半年 AI 飆股名單與公益贈書，請點擊下方說明欄連結加助教 LINE：peakchaser116";
             } else if (type === 'morris') {
-                document.getElementById('input-video-url').value = "https://www.youtube.com/watch?v=jNQXAC9IVRw";
+                document.getElementById('input-video-url').value = "https://www.youtube.com/watch?v=KGb71MV4-3E";
                 document.getElementById('input-video-ctx').value = "【AI生成主播 HeyGen 深偽短影音】張忠謀親授退休理財密碼，保證獲利 60% 以上，名額有限請私訊領取代碼加 LINE";
             } else {
-                document.getElementById('input-video-url').value = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
-                document.getElementById('input-video-ctx').value = "【台視新聞 TTV News 官方頻道】內政部警政署 165 反詐騙宣導：提醒民眾小心網路投資詐騙，遇可疑訊息請撥打 165 專線查證。";
+                document.getElementById('input-video-url').value = "https://www.youtube.com/watch?v=ygdhFBQWiz0";
+                document.getElementById('input-video-ctx').value = "【內政部警政署 CIB 刑事警察局官方頻道】165 反詐騙宣導：提醒民眾小心網路 AI 深偽換臉與假投資詐騙，遇可疑訊息請撥打 165 專線查證。";
             }
             analyzeVideo();
         }
@@ -547,7 +547,7 @@
                 <div class="mb-4 p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs space-y-1">
                     <div>📺 <b>來源平台：</b><code class="text-sky-300">${vr.platform || '網路影音'}</code></div>
                     <div>📝 <b>影片標題：</b><code class="text-slate-200">${vr.title || '未提供標題'}</code></div>
-                    <div>👤 <b>發布頻道：</b><code class="text-amber-300">${vr.author_name || '匿名/未公開頻道'}</code> ${vr.is_official_channel ? '🟢 (官方認證媒體)' : '⚠️ (非官方認證頻道)'}</div>
+                    <div>👤 <b>發布頻道：</b><code class="text-amber-300">${vr.author_name || '匿名/未公開頻道'}</code> ${vr.is_official_channel ? (score <= 30 ? '🟢 (官方認證媒體/機構)' : '⚠️ (遭擷取畫面搭配詐騙引流文案)') : '⚠️ (非官方認證頻道)'}</div>
                     <div>🔬 <b>人臉/背景高頻紋理比值：</b><code class="text-yellow-300">${vm.skin_smoothing_ratio || 1.0}x</code> ｜ <b>跨幀閃爍度：</b><code class="text-yellow-300">${vm.temporal_flicker_score || 0.0}</code></div>
                 </div>`;
 
