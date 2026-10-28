@@ -87,9 +87,20 @@ class AntiScamForensicEngine:
         # 2. RAG 知識庫檢索
         rag_cases = self.retriever.retrieve(user_text, top_k=2)
 
+        # 2.5 即時短網址展開核驗 (提供給 LLM 與離線引擎雙重參考)
+        url_inspection_notes = []
+        for u in re.findall(r"https?://[^\s]+", user_text):
+            u_clean = u.rstrip(").,;\"'】」")
+            dest_u = self._resolve_redirect_url(u_clean)
+            if dest_u and dest_u != u_clean:
+                url_inspection_notes.append(f"• 原始短網址 `{u_clean}` 實時展開轉址目標為：`{dest_u}`")
+        enriched_user_text = user_text
+        if url_inspection_notes:
+            enriched_user_text = user_text + "\n\n【系統短網址實時展開核驗資訊】：\n" + "\n".join(url_inspection_notes)
+
         # 3. 組裝動態 Prompt
         prompt = build_analysis_prompt(
-            user_text=user_text,
+            user_text=enriched_user_text,
             rag_context=rag_cases,
             image_description=image_desc if payload.image_path else None
         )
@@ -125,7 +136,7 @@ class AntiScamForensicEngine:
 
     def _call_gemini_api(self, prompt: str) -> str:
         """調用 Google Gemini REST API (具備多模型自動降級與重試)"""
-        candidate_models = [self.model_name, "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-flash-latest"]
+        candidate_models = [self.model_name, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"]
         models_to_try = []
         for m in candidate_models:
             if m and m not in models_to_try:
@@ -179,6 +190,22 @@ class AntiScamForensicEngine:
         data = resp.json()
         return data["choices"][0]["message"]["content"]
 
+    def _resolve_redirect_url(self, short_url: str) -> str:
+        """即時追蹤短網址轉址目標，確認最終真實網域"""
+        try:
+            resp = requests.get(
+                short_url,
+                allow_redirects=True,
+                timeout=3.5,
+                stream=True,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            )
+            final_url = resp.url or short_url
+            resp.close()
+            return final_url
+        except Exception:
+            return short_url
+
     def _intelligent_offline_inference(self, user_text: str, rag_cases: list) -> str:
         """智慧離線推論引擎：依據 RAG 檢索特徵與關鍵詞規則進行精準鑑識"""
         low_text = user_text.lower()
@@ -186,9 +213,12 @@ class AntiScamForensicEngine:
         
         # 信任之台灣官方與正派機構網域白名單 (不視為釣魚連結)
         TRUSTED_DOMAINS = [
-            "cht.tw", "twm.tw", "taiwanmobile.com", "fet.tw", "fetnet.net",
-            "sho.pe", "shopee.tw", "momo.dm", "momo.com.tw", "pchome.tw", "pchome.com.tw",
-            "lin.ee", "line.me", "fami.tw", "family.com.tw", "7-11.com.tw",
+            "twm5g.co", "oppay.tw", "twm.tw", "taiwanmobile.com", "myfone.com.tw", "myvideo.net.tw",
+            "cht.tw", "cht.com.tw", "emome.net", "fet.tw", "fetnet.net", "friday.tw",
+            "sho.pe", "shopee.tw", "momo.dm", "momoshop.com.tw", "momo.com.tw",
+            "pchome.tw", "pchome.com.tw", "pchome24h.com.tw", "books.com.tw",
+            "lin.ee", "line.me", "fami.tw", "family.com.tw", "7-11.com.tw", "openpoint.com.tw", "pxmart.com.tw",
+            "youtube.com", "youtu.be",
             "gov.tw", "edu.tw", "cathaybk.com.tw", "esunbank.com.tw",
             "taipower.com.tw", "water.gov.tw", "post.gov.tw", "fubon.com",
             "ctbcbank.com", "megabank.com.tw", "sinopac.com", "hncb.com.tw",
@@ -196,16 +226,21 @@ class AntiScamForensicEngine:
             "ntu.edu.tw", "moj.gov.tw", "npa.gov.tw", "trendmicro.com"
         ]
 
-        # 抽取訊息中所有網址
+        # 抽取訊息中所有網址並支援即時短網址展開核驗
         found_urls = re.findall(r"https?://[^\s]+", user_text)
         has_suspicious_url = False
         suspicious_url_str = ""
+        verified_official_urls = []
         for u in found_urls:
-            u_low = u.lower()
-            is_trusted = any(td in u_low for td in TRUSTED_DOMAINS)
-            if not is_trusted:
+            u_clean = u.rstrip(").,;\"'】」")
+            u_low = u_clean.lower()
+            resolved_u = self._resolve_redirect_url(u_clean)
+            is_trusted = any(td in u_low for td in TRUSTED_DOMAINS) or any(td in resolved_u.lower() for td in TRUSTED_DOMAINS)
+            if is_trusted:
+                verified_official_urls.append((u_clean, resolved_u))
+            else:
                 has_suspicious_url = True
-                suspicious_url_str = u
+                suspicious_url_str = u_clean
                 break
 
         # 尋找電子郵件與免費信箱偽冒特徵
@@ -237,6 +272,15 @@ class AntiScamForensicEngine:
         is_scam = has_email_spoof or has_recurring_fee or has_phishing_link or has_money_trigger or has_legal_threat or has_investment_trap or has_teller_coaching or has_job_or_account_trap or has_urgent_relative_trap or has_crypto_airdrop
 
         if not is_scam:
+            if verified_official_urls:
+                orig_u, dest_u = verified_official_urls[0]
+                if orig_u != dest_u:
+                    safe_evidence = f"經 165 AI 鑑識與短網址實時展開核驗，訊息中之短連結 ({orig_u}) 轉址目標為官方安全網域 ({dest_u})，確認為合法電信/電商官方行銷活動（如台灣大哥大 twm5g.co / oppay.tw 或蝦皮 sho.pe 等官方優惠通知），且無要求匯款轉帳或索取銀行密碼，屬於安全正常訊息。"
+                else:
+                    safe_evidence = f"經 165 AI 鑑識比對，訊息中之連結 ({orig_u}) 屬於台灣官方電信/電商合法白名單網域，內容為正常會員促銷與活動通知，未出現要求匯款或竊取個資特徵，屬於日常安全內容。"
+            else:
+                safe_evidence = "經 165 AI 鑑識比對，此內容未出現釣魚連結、非官方網址、要求匯款轉帳、恐嚇凍結、規避行員提問或假投資等惡意破綻特徵，屬於日常安全內容。"
+
             return json.dumps({
                 "analysis_id": f"SCAM-EVAL-{uuid.uuid4().hex[:8].upper()}",
                 "timestamp": now_iso,
@@ -245,14 +289,14 @@ class AntiScamForensicEngine:
                     "risk_score": 5,
                     "risk_level": "安全",
                     "confidence_level": "高",
-                    "primary_scam_type": "正常訊息 / 非詐騙"
+                    "primary_scam_type": "正常訊息 / 官方活動通知" if verified_official_urls else "正常訊息 / 非詐騙"
                 },
                 "red_flags": [],
                 "psychological_tactics": [],
-                "evidence_analysis": "經 165 AI 鑑識比對，此內容未出現釣魚連結、非官方網址、要求匯款轉帳、恐嚇凍結、規避行員提問或假投資等惡意破綻特徵，屬於日常安全內容。",
+                "evidence_analysis": safe_evidence,
                 "actionable_guidance": {
-                    "immediate_actions": ["無須採取任何防禦行動，可正常閱讀與回覆。"],
-                    "official_verification": ["若為重要公務或銀行交易且有疑慮，可直接致電官方官方代表號確認。"],
+                    "immediate_actions": ["此為合法官方通知或日常安全訊息，無須採取防禦行動。"],
+                    "official_verification": ["若對優惠活動細節有疑問，可透過該電信/電商官方 App 或官網查詢確認。"],
                     "recommended_safe_reply": "內容安全，無需特別防範。"
                 }
             }, ensure_ascii=False)

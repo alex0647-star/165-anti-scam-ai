@@ -68,15 +68,20 @@ def format_line_response(result) -> str:
         lines.append("─────────────────")
 
     lines.append("🛡️ 【165 安全處置指南】")
-    lines.append("🚨 切勿進行：")
-    for act in result.actionable_guidance.immediate_actions:
-        lines.append(f"  ❌ {act}")
+    if score <= 30:
+        lines.append("✨ 處置建議：")
+        for act in result.actionable_guidance.immediate_actions:
+            lines.append(f"  🟢 {act}")
+    else:
+        lines.append("🚨 切勿進行：")
+        for act in result.actionable_guidance.immediate_actions:
+            lines.append(f"  ❌ {act}")
     
     lines.append("📞 官方查證途徑：")
     for ver in result.actionable_guidance.official_verification:
         lines.append(f"  ✅ {ver}")
 
-    if result.actionable_guidance.recommended_safe_reply:
+    if result.actionable_guidance.recommended_safe_reply and score > 30:
         lines.append("─────────────────")
         lines.append(f"💬 【建議安全防禦話術】\n「{result.actionable_guidance.recommended_safe_reply}」")
 
