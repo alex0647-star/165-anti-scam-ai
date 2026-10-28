@@ -128,6 +128,64 @@ def download_line_image(message_id: str) -> str:
     return tmp_file.name
 
 
+def download_line_video(message_id: str) -> str:
+    """從 LINE Messaging API 下載使用者傳送的短影音 (.mp4) 並存為暫存檔"""
+    token = get_clean_env("LINE_CHANNEL_ACCESS_TOKEN", LINE_CHANNEL_ACCESS_TOKEN)
+    url = f"https://api-data.line.me/v2/bot/message/{message_id}/content"
+    headers = {"Authorization": f"Bearer {token}"}
+    resp = requests.get(url, headers=headers, stream=True, timeout=20)
+    resp.raise_for_status()
+    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+    for chunk in resp.iter_content(chunk_size=65536):
+        if chunk:
+            tmp_file.write(chunk)
+            if tmp_file.tell() > 10 * 1024 * 1024:  # 限制讀取前 10MB 確保秒級抽幀回應
+                break
+    tmp_file.close()
+    return tmp_file.name
+
+
+def format_line_video_response(vr: dict) -> str:
+    """將 AI 深偽影片與短影音鑑識結果格式化為 LINE 手機訊息排版"""
+    v_score = vr.get("scam_risk_score", 10)
+    df_prob = vr.get("deepfake_probability", 12)
+    lines = [
+        f"🎬 {vr.get('verdict_title', '【AI 深偽影片鑑識報告】')}",
+        f"🤖 AI 深偽合成機率：{df_prob}%",
+        f"📊 綜合詐騙風險指數：{v_score} / 100",
+        f"🎯 判定類型：{vr.get('primary_type', '一般影音')}",
+        "─────────────────",
+        f"📺 來源平台：{vr.get('platform', 'LINE 影片上傳')}",
+    ]
+    if vr.get("title"):
+        lines.append(f"📝 影片標題：{vr['title'][:60]}")
+    if vr.get("author_name"):
+        ch_tag = " ✅[官方頻道]" if vr.get("is_official_channel") else " ⚠️[非官方認證]"
+        lines.append(f"👤 發布頻道：{vr['author_name']}{ch_tag}")
+
+    vm = vr.get("visual_metrics", {})
+    lines.append(f"🔬 人臉/背景紋理比值：{vm.get('skin_smoothing_ratio', 1.0)}x")
+    if vr.get("gemini_comment"):
+        lines.append("─────────────────")
+        lines.append(f"🧠 【多模態視覺深偽剖析】\n{vr['gemini_comment']}")
+
+    if vr.get("forensic_flags"):
+        lines.append("─────────────────")
+        lines.append("🚩 【偵測到的深偽與詐騙破綻】")
+        for ff in vr["forensic_flags"][:4]:
+            lines.append(f"• [{ff.get('severity', 'HIGH')}] 「{ff.get('quote')}」➔ {ff.get('issue_type')}")
+
+    lines.append("─────────────────")
+    lines.append("🛡️ 【165 防範 AI 深偽詐騙指南】")
+    if v_score > 50 or df_prob > 50:
+        lines.append("  ❌ 切勿輕信短影音中名人（如黃仁勳、張忠謀、財經專家）推薦飆股或免費贈書！")
+        lines.append("  ❌ 切勿點擊影片說明欄連結或加入影片內的私人 LINE ID！")
+        lines.append("  ✅ 遇可疑名人投資廣告請撥打 165 反詐騙專線查證。")
+    else:
+        lines.append("  🟢 未偵測到明顯 AI 換臉冒用名人或假投資引流話術。")
+    return "\n".join(lines)
+
+
 @app.get("/")
 async def health_check():
     return {"status": "running", "service": "165 AI Anti-Scam LINE Bot Server"}
@@ -207,6 +265,29 @@ async def line_webhook(request: Request, x_line_signature: str = Header(None)):
                                 os.remove(tmp_path)
                             except Exception:
                                 pass
+
+            elif msg_type == "video":
+                msg_id = msg.get("id", "")
+                if msg_id:
+                    tmp_vpath = ""
+                    grid_p = ""
+                    try:
+                        print(f"🎬 [收到 LINE 影片] Message ID: {msg_id}，啟動 AI 深偽影片抽幀與話術鑑識...")
+                        tmp_vpath = download_line_video(msg_id)
+                        v_report = engine.analyze_video_forensics(video_path=tmp_vpath)
+                        grid_p = v_report.get("grid_image_path", "")
+                        reply_content = format_line_video_response(v_report)
+                        reply_line_message(reply_token, reply_content)
+                    except Exception as e:
+                        print(f"❌ [LINE Video Analysis Error] 影片鑑識失敗: {e}")
+                        reply_line_message(reply_token, "⚠️ 抱歉，影片抽幀鑑識時發生短暫異常，您可直接貼上該影片的網址（YouTube / Shorts / TikTok / FB Reels）或截圖傳送，系統將立即為您鑑識！")
+                    finally:
+                        for p in [tmp_vpath, grid_p]:
+                            if p and os.path.exists(p):
+                                try:
+                                    os.remove(p)
+                                except Exception:
+                                    pass
 
     return {"status": "ok"}
 

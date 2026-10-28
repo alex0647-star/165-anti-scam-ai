@@ -17,6 +17,7 @@ from anti_scam_llm.schemas import AntiScamAnalysisResult, InputPayload
 from anti_scam_llm.prompts import build_analysis_prompt
 from anti_scam_llm.knowledge_base import ScamKnowledgeRetriever, check_165_official_line_id
 from anti_scam_llm.vision_processor import VisionProcessor
+from anti_scam_llm.video_processor import VideoForensicProcessor
 from anti_scam_llm.guardrails import OutputGuardrail
 
 
@@ -35,8 +36,42 @@ class AntiScamForensicEngine:
         
         self.retriever = ScamKnowledgeRetriever()
         self.vision_processor = VisionProcessor(api_key=self.api_key)
+        self.video_processor = VideoForensicProcessor(api_key=self.api_key, vision_processor=self.vision_processor)
 
-    def analyze(self, payload: InputPayload) -> AntiScamAnalysisResult:
+    def analyze_video_forensics(
+        self,
+        video_url: Optional[str] = None,
+        video_path: Optional[str] = None,
+        user_context_text: str = ""
+    ) -> Dict[str, Any]:
+        """針對影片連結 (YouTube/Shorts/TikTok/FB Reels/IG) 或上傳之影片檔 (.mp4) 進行 AI 深偽與詐騙鑑識"""
+        v_res = self.video_processor.analyze_video(
+            video_url=video_url,
+            video_path=video_path,
+            user_context_text=user_context_text
+        )
+        # 同步透過主推論引擎對影片抽取出的綜合文本 (標題+頻道+資訊欄+畫面OCR字幕) 執行 165 鑑識
+        combined_txt = v_res.get("combined_text", "") or user_context_text
+        if combined_txt.strip():
+            text_result = self.analyze(InputPayload(text=combined_txt), _skip_video_hook=True)
+            # 融合影片深偽分數與文字詐騙分數
+            final_score = max(v_res.get("scam_risk_score", 10), text_result.risk_assessment.risk_score)
+            # 若影片明確為官方頻道且無深偽/詐騙關鍵字，保持低風險
+            if v_res.get("is_official_channel") and not v_res.get("matched_scam_keywords") and not v_res.get("matched_ai_keywords"):
+                final_score = 5
+            v_res["scam_risk_score"] = final_score
+            # 合併文字鑑識紅旗至影片紅旗清單
+            existing_quotes = {f["quote"] for f in v_res.get("forensic_flags", [])}
+            for rf in text_result.red_flags:
+                if rf.quote not in existing_quotes and final_score > 30:
+                    v_res["forensic_flags"].append({
+                        "severity": rf.severity.value,
+                        "quote": rf.quote,
+                        "issue_type": rf.issue_type
+                    })
+        return v_res
+
+    def analyze(self, payload: InputPayload, _skip_video_hook: bool = False) -> AntiScamAnalysisResult:
         """端到端全流程鑑識分析"""
         user_text = payload.text or ""
         image_desc = ""
@@ -46,6 +81,65 @@ class AntiScamForensicEngine:
         if current_k:
             self.api_key = current_k
             self.vision_processor.gemini_key = current_k
+            self.video_processor.api_key = current_k
+
+        # 0. 若使用者貼上影片連結 (YouTube / Shorts / TikTok / FB Reels / IG)，自動連線抓取影片元數據與關鍵影格進行 AI 深偽鑑識
+        if not _skip_video_hook and user_text:
+            detected_vid_url = VideoForensicProcessor.is_video_url(user_text)
+            if detected_vid_url:
+                v_info = self.video_processor.analyze_video(video_url=detected_vid_url, user_context_text=user_text)
+                if v_info.get("grid_image_path") and os.path.exists(v_info["grid_image_path"]):
+                    try:
+                        os.remove(v_info["grid_image_path"])
+                    except Exception:
+                        pass
+                if v_info.get("deepfake_probability", 0) >= 60 or v_info.get("scam_risk_score", 0) >= 60:
+                    now_iso = datetime.now(timezone.utc).isoformat()
+                    final_sc = max(v_info.get("scam_risk_score", 85), v_info.get("deepfake_probability", 85))
+                    flags_list = v_info.get("forensic_flags", []) or [{
+                        "quote": detected_vid_url,
+                        "issue_type": "偵測到高風險 AI 深偽合成 / 假冒名人投資引流短影音特徵",
+                        "severity": "HIGH"
+                    }]
+                    vid_json = json.dumps({
+                        "analysis_id": f"VID-EVAL-{uuid.uuid4().hex[:8].upper()}",
+                        "timestamp": now_iso,
+                        "input_summary": (v_info.get("title") or user_text)[:60],
+                        "risk_assessment": {
+                            "risk_score": final_sc,
+                            "risk_level": "極度危險" if final_sc > 80 else "中度風險",
+                            "confidence_level": "高",
+                            "primary_scam_type": v_info.get("primary_type", "AI Deepfake 換臉 / 詐騙引流短影音")
+                        },
+                        "red_flags": flags_list,
+                        "psychological_tactics": [
+                            {
+                                "tactic_name": "AI 深偽 (Deepfake) 權威名人肖像與聲音克隆偽冒",
+                                "description": "利用 AI 換臉與語音合成技術偽造企業領袖（如黃仁勳、張忠謀）或財經專家發表演講，降低民眾戒心並誘導加入詐騙 LINE 群組。"
+                            }
+                        ],
+                        "evidence_analysis": (
+                            f"{v_info.get('summary_report', '')}\n"
+                            f"經 165 AI 視訊深偽鑑識引擎連線解析該影片網址 (`{detected_vid_url}`)，"
+                            f"發現該影片具有高度【{v_info.get('primary_type')}】風險！請切勿輕信影片中之名人背書、免費贈書或點擊說明欄連結加入 LINE 帳號。"
+                        ),
+                        "actionable_guidance": {
+                            "immediate_actions": [
+                                "切勿點擊影片下方說明欄、留言區置頂或個人主頁中的 LINE 連結。",
+                                "名人（如黃仁勳、張忠謀、財經專家）絕不會透過短影音發送飆股名單或要求私訊加 LINE 領贈書！"
+                            ],
+                            "official_verification": [
+                                "請檢視發布該影片之頻道是否具備官方認證標章（藍勾勾）與長期歷史影片。",
+                                "撥打 165 反詐騙諮詢專線或向該影音平台檢舉『AI 合成冒用名人詐騙廣告』。"
+                            ],
+                            "recommended_safe_reply": "這是 AI 換臉合成的詐騙短影音，千萬不要加裡面的 LINE！"
+                        }
+                    }, ensure_ascii=False)
+                    _, validated_vid, _ = OutputGuardrail.validate_and_parse(
+                        raw_output=vid_json,
+                        fallback_input_summary=user_text[:50]
+                    )
+                    return validated_vid
 
         # 1. 處理影像輸入（若有）
         if payload.image_path:

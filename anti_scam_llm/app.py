@@ -190,10 +190,11 @@ retriever = ScamKnowledgeRetriever()
 st.markdown("<div class='main-title'>🛡️ 165 AI 智能多模態防詐騙鑑識工作台</div>", unsafe_allow_html=True)
 st.markdown("<div class='subtitle'>運用大型語言模型 (LLM)、思維鏈鑑識 (CoT) 與 165 反詐騙知識庫檢索 (RAG)，秒級拆解各類簡訊、對話截圖與網路詐騙陷阱。</div>", unsafe_allow_html=True)
 
-# --- 核心四大頁籤 ---
-tab_text, tab_image, tab_kb, tab_bench = st.tabs([
+# --- 核心五大頁籤 ---
+tab_text, tab_image, tab_video, tab_kb, tab_bench = st.tabs([
     "💬 即時文字鑑識 (Text Guard)",
     "📸 多模態截圖鑑識 (Vision OCR)",
+    "🎬 AI 深偽影片鑑識 (Deepfake Video Guard)",
     "📚 165 詐騙知識庫導覽 (Knowledge Base)",
     "📊 基準測試與量化評估 (Benchmark Dashboard)"
 ])
@@ -409,6 +410,151 @@ with tab_image:
                         os.remove(temp_path)
         elif not uploaded_file:
             st.info("💡 請在左側上傳圖片以啟動視覺鑑識。")
+
+
+# ==========================================
+# 頁籤二點五：AI 深偽影片與短影音連結鑑識
+# ==========================================
+with tab_video:
+    st.subheader("🎬 AI 深偽影片與短影音連結鑑識 (Deepfake & Scam Video Guard)")
+    st.caption(
+        "💡 支援直接貼上 **YouTube / YouTube Shorts / TikTok (抖音) / Facebook Reels / Instagram 影片連結**，"
+        "或直接上傳 **`.mp4` / `.mov` / `.webm` 影片檔**，自動抽取多時間點關鍵影格、頻道真偽與字幕話術進行三維度 AI 深偽鑑識！"
+    )
+
+    col_vid_in, col_vid_out = st.columns([1.1, 1.3], gap="large")
+
+    if "video_url_input" not in st.session_state:
+        st.session_state["video_url_input"] = ""
+    if "video_context_input" not in st.session_state:
+        st.session_state["video_context_input"] = ""
+
+    with col_vid_in:
+        st.markdown("#### 🔗 方式一：貼上可疑影片連結 (URL)")
+        st.caption("快速載入實戰測試範例：")
+        v_btn_cols = st.columns(3)
+        vid_sample_triggered = False
+
+        if v_btn_cols[0].button("🎭 假黃仁勳 AI 換臉報明牌", use_container_width=True):
+            st.session_state["video_url_input"] = "https://www.youtube.com/watch?v=aqz-KE-bpKQ"
+            st.session_state["video_context_input"] = "【AI換臉深偽測試】黃仁勳最新內部演講：台灣散戶最後翻身機會！免費領取下半年 AI 飆股名單與公益贈書，請點擊下方說明欄連結加助教 LINE：peakchaser116"
+            vid_sample_triggered = True
+        if v_btn_cols[1].button("🤖 AI 數字人主播引流短影音", use_container_width=True):
+            st.session_state["video_url_input"] = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+            st.session_state["video_context_input"] = "【AI生成主播 HeyGen 深偽短影音】張忠謀親授退休理財密碼，保證獲利 60% 以上，名額有限請私訊領取代碼加 LINE"
+            vid_sample_triggered = True
+        if v_btn_cols[2].button("✅ 正常官方防詐宣導影片", use_container_width=True):
+            st.session_state["video_url_input"] = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+            st.session_state["video_context_input"] = "【台視新聞 TTV News 官方頻道】內政部警政署 165 反詐騙宣導：提醒民眾小心網路投資詐騙，遇可疑訊息請撥打 165 專線查證。"
+            vid_sample_triggered = True
+
+        vid_url_val = st.text_input(
+            "請貼上 YouTube / Shorts / TikTok / FB Reels / IG 影片網址：",
+            key="video_url_input",
+            placeholder="例如：https://www.youtube.com/shorts/... 或 https://www.tiktok.com/..."
+        )
+        vid_ctx_val = st.text_area(
+            "補充影片字幕、貼文標題或可疑對話說明（選填）：",
+            key="video_context_input",
+            height=90,
+            placeholder="可選填影片中聽到的台詞、跑馬燈字幕或社群貼文附帶的加 LINE 訊息..."
+        )
+
+        st.markdown("#### 📤 方式二：直接上傳影片檔案 (支援 MP4, MOV, WEBM)")
+        uploaded_video = st.file_uploader("上傳手機收到的可疑短影音檔案", type=["mp4", "mov", "webm", "m4v"])
+        if uploaded_video:
+            st.video(uploaded_video)
+
+        run_vid_btn = st.button("🎬 啟動 AI 深偽影片與頻道鑑識", type="primary", use_container_width=True)
+
+    with col_vid_out:
+        st.subheader("📑 視訊深偽與防詐鑑識報告")
+        cur_v_url = (vid_url_val or st.session_state.get("video_url_input", "")).strip()
+        cur_v_ctx = (vid_ctx_val or st.session_state.get("video_context_input", "")).strip()
+
+        if (run_vid_btn or vid_sample_triggered) and (cur_v_url or uploaded_video or cur_v_ctx):
+            with st.spinner("AI 正在連線抽取影片關鍵影格、分析人臉頻域偽影並核驗發布頻道真偽..."):
+                temp_v_path = None
+                try:
+                    if uploaded_video:
+                        v_ext = os.path.splitext(uploaded_video.name)[1] or ".mp4"
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=v_ext) as tvf:
+                            tvf.write(uploaded_video.getbuffer())
+                            temp_v_path = tvf.name
+
+                    fresh_engine = AntiScamForensicEngine(api_key=active_gemini_key if active_gemini_key else None)
+                    v_report = fresh_engine.analyze_video_forensics(
+                        video_url=cur_v_url if cur_v_url else None,
+                        video_path=temp_v_path,
+                        user_context_text=cur_v_ctx
+                    )
+                    st.session_state["last_video_report"] = v_report
+                finally:
+                    if temp_v_path and os.path.exists(temp_v_path):
+                        os.remove(temp_v_path)
+
+        if "last_video_report" in st.session_state and st.session_state["last_video_report"]:
+            vr = st.session_state["last_video_report"]
+            v_score = vr.get("scam_risk_score", 10)
+            df_prob = vr.get("deepfake_probability", 12)
+
+            if v_score <= 30 and df_prob <= 30:
+                v_color = "#22C55E"
+            elif v_score <= 65 and df_prob <= 65:
+                v_color = "#F97316"
+            else:
+                v_color = "#EF4444"
+
+            st.markdown(f"""
+            <div style='background-color:{v_color}18; border: 1px solid {v_color}44; border-left: 6px solid {v_color}; padding: 1rem; border-radius: 8px; margin-bottom: 1.0rem;'>
+                <h3 style='color:{v_color}; margin:0; font-size:1.35rem;'>{vr.get("verdict_title")}</h3>
+                <p style='margin: 0.6rem 0 0 0; font-size: 1.02rem; color: #F8FAFC;'>
+                    <b style='color:#CBD5E1;'>🤖 AI 深偽合成機率：</b> <code style='color:#FEF08A; background-color:rgba(0,0,0,0.5); padding:0.18rem 0.5rem; border-radius:4px; font-weight:bold;'>{df_prob}%</code> &nbsp;|&nbsp;
+                    <b style='color:#CBD5E1;'>🚨 綜合詐騙風險：</b> <code style='color:#F87171; background-color:rgba(0,0,0,0.5); padding:0.18rem 0.5rem; border-radius:4px; font-weight:bold;'>{v_score} / 100</code><br>
+                    <b style='color:#CBD5E1;'>📌 判定類型：</b> <code style='color:#38BDF8; background-color:rgba(0,0,0,0.5); padding:0.18rem 0.5rem; border-radius:4px;'>{vr.get("primary_type")}</code>
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # 展示 2x2 關鍵影格時序鑑識網格圖
+            grid_p = vr.get("grid_image_path")
+            if grid_p and os.path.exists(grid_p):
+                st.image(
+                    grid_p,
+                    caption="🔍 系統自動抽取之「2x2 關鍵影格時序與邊緣偽影鑑識拼圖」(含初始影格、人臉嘴型特寫、字幕區與高頻邊緣偽影檢測圖)",
+                    use_container_width=True
+                )
+
+            with st.expander("📊 展開查看【頻道來源元數據 & 視覺頻域指標】", expanded=True):
+                vm = vr.get("visual_metrics", {})
+                st.markdown(
+                    f"- **📺 來源平台**：`{vr.get('platform')}`\n"
+                    f"- **📝 影片標題**：`{vr.get('title') or '未偵測到標題'}`\n"
+                    f"- **👤 發布頻道**：`{vr.get('author_name') or '未公開 / 匿名帳號'}` "
+                    f"{'🟢 *(已確認為官方媒體/企業頻道)*' if vr.get('is_official_channel') else '⚠️ *(非官方認證媒體頻道)*'}\n"
+                    f"- **🔬 人臉/背景高頻紋理比值**：`{vm.get('skin_smoothing_ratio', 1.0)}x` "
+                    f"*(>1.65x 代表人像區疑有 AI 換臉平滑濾鏡或合成模糊)*\n"
+                    f"- **⚡ 跨影格時序閃爍指標**：`{vm.get('temporal_flicker_score', 0.0)}`"
+                )
+                if vr.get("gemini_comment"):
+                    st.info(f"🧠 **Gemini 多模態視覺深偽分析**：\n{vr['gemini_comment']}")
+
+            if vr.get("forensic_flags"):
+                st.markdown("##### 🚩 偵測到的 AI 深偽與詐騙破綻：")
+                for ff in vr["forensic_flags"]:
+                    st.markdown(f"""
+                    <div class='red-flag-box'>
+                        <strong>[{ff.get('severity', 'HIGH')}]</strong> 「<code>{ff.get('quote')}</code>」 ➔ <em>{ff.get('issue_type')}</em>
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div class='safe-box'>
+                    <strong>[SAFE]</strong> 經檢驗影片關鍵影格、頻道來源與字幕內容，未發現 AI 換臉冒用名人或誘導加 LINE 領飆股之詐騙特徵。
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("💡 請在左側貼上影片連結（或點選上方測試範例）或上傳 `.mp4` 影片檔案，並點擊「🎬 啟動 AI 深偽影片與頻道鑑識」。")
 
 
 # ==========================================
