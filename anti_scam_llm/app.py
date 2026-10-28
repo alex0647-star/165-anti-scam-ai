@@ -195,24 +195,30 @@ tab_text, tab_image, tab_kb, tab_bench = st.tabs([
 with tab_text:
     col_input, col_result = st.columns([1.1, 1.3], gap="large")
 
+    if "forensic_input_text" not in st.session_state:
+        st.session_state["forensic_input_text"] = ""
+
     with col_input:
         st.subheader("📝 輸入待鑑識訊息")
         
-        # 快速範例按鈕
+        # 快速範例按鈕 (使用 session_state 持久化文字，避免點擊分析按鈕時被清空)
         st.caption("快速載入經典測試範例：")
         btn_cols = st.columns(3)
-        sample_text = ""
+        sample_triggered = False
         
         if btn_cols[0].button("📈 假飆股群組", use_container_width=True):
-            sample_text = "【台股實戰學院】張老師親自帶盤！佈局下半年翻倍黑馬飆股，上週帶會員獲利達 45%。免費領取精準進出場點位，名額僅限前 20 名，請點擊連結加助理 Line：https://line.me/ti/p/scam888"
+            st.session_state["forensic_input_text"] = "【台股實戰學院】張老師親自帶盤！佈局下半年翻倍黑馬飆股，上週帶會員獲利達 45%。免費領取精準進出場點位，名額僅限前 20 名，請點擊連結加助理 Line：https://line.me/ti/p/scam888"
+            sample_triggered = True
         if btn_cols[1].button("⚠️ 假解除分期", use_container_width=True):
-            sample_text = "您好，這裡是博客來客服。因新進人員系統登錄錯誤，將您的訂單誤設為批發商經銷商，今晚 12 點前將自動從您帳戶扣款 14,800 元。為協助您取消扣款，請配合稍後配合銀行專員來電，並攜帶金融卡至鄰近 ATM 進行身分驗證。"
+            st.session_state["forensic_input_text"] = "您好，這裡是博客來客服。因新進人員系統登錄錯誤，將您的訂單誤設為批發商經銷商，今晚 12 點前將自動從您帳戶扣款 14,800 元。為協助您取消扣款，請配合稍後配合銀行專員來電，並攜帶金融卡至鄰近 ATM 進行身分驗證。"
+            sample_triggered = True
         if btn_cols[2].button("💳 正常刷卡通知", use_container_width=True):
-            sample_text = "國泰世華銀行通知：您於 09/07 18:32 透過信用卡 (末四碼 8821) 於台灣高鐵消費 NT$1,490 元，若非您本人交易請速洽本行客服專線 02-2383-1000。"
+            st.session_state["forensic_input_text"] = "國泰世華銀行通知：您於 09/07 18:32 透過信用卡 (末四碼 8821) 於台灣高鐵消費 NT$1,490 元，若非您本人交易請速洽本行客服專線 02-2383-1000。"
+            sample_triggered = True
 
         input_text = st.text_area(
             "請貼上簡訊、Line 對話、電子郵件等訊息：",
-            value=sample_text,
+            key="forensic_input_text",
             height=200,
             placeholder="例如：您有一筆交通罰款逾期未繳，請點擊連結繳納..."
         )
@@ -222,68 +228,76 @@ with tab_text:
     with col_result:
         st.subheader("🔍 鑑識分析報告")
         
-        if analyze_btn and input_text.strip():
+        current_text = (input_text or st.session_state.get("forensic_input_text", "")).strip()
+
+        if (analyze_btn or sample_triggered) and current_text:
             with st.spinner("AI 鑑識專家正在檢索 165 知識庫並進行 CoT 推理分析..."):
                 fresh_engine = AntiScamForensicEngine(api_key=active_gemini_key if active_gemini_key else None)
-                payload = InputPayload(text=input_text)
+                payload = InputPayload(text=current_text)
                 result = fresh_engine.analyze(payload)
-                ra = result.risk_assessment
+                st.session_state["last_text_result"] = result
 
-                # 顏色與狀態定義
-                score = ra.risk_score
-                if score <= 30:
-                    badge_color = "#22C55E"
-                    status_title = "🟢 安全 (正常訊息)"
-                elif score <= 60:
-                    badge_color = "#EAB308"
-                    status_title = "🟡 低度疑慮"
-                elif score <= 80:
-                    badge_color = "#F97316"
-                    status_title = "🟠 中度風險"
-                else:
-                    badge_color = "#EF4444"
-                    status_title = "🔴 極度危險 (高機率詐騙)"
+        if analyze_btn and not current_text:
+            st.warning("⚠️ 請先在左側文字框貼上或輸入待鑑識的訊息內容（貼上後可直接點擊「🚀 啟動 AI 鑑識分析」），或點選上方測試範例按鈕！")
+        elif "last_text_result" in st.session_state and st.session_state["last_text_result"] is not None:
+            result = st.session_state["last_text_result"]
+            ra = result.risk_assessment
 
-                # 風險總覽卡片
-                st.markdown(f"""
-                <div style='background-color:{badge_color}18; border: 1px solid {badge_color}44; border-left: 6px solid {badge_color}; padding: 1rem; border-radius: 8px; margin-bottom: 1.2rem;'>
-                    <h3 style='color:{badge_color}; margin:0; font-size:1.35rem;'>{status_title}</h3>
-                    <p style='margin: 0.6rem 0 0 0; font-size: 1.05rem; color: #F8FAFC;'>
-                        <b style='color:#CBD5E1;'>量化風險指數：</b> <code style='color:#FEF08A; background-color:rgba(0,0,0,0.5); padding:0.18rem 0.5rem; border-radius:4px; font-weight:bold;'>{score} / 100</code> &nbsp;|&nbsp; 
-                        <b style='color:#CBD5E1;'>判定手法類型：</b> <code style='color:#38BDF8; background-color:rgba(0,0,0,0.5); padding:0.18rem 0.5rem; border-radius:4px; font-weight:bold;'>{ra.primary_scam_type}</code>
-                    </p>
-                </div>
-                """, unsafe_allow_html=True)
+            # 顏色與狀態定義
+            score = ra.risk_score
+            if score <= 30:
+                badge_color = "#22C55E"
+                status_title = "🟢 安全 (正常訊息)"
+            elif score <= 60:
+                badge_color = "#EAB308"
+                status_title = "🟡 低度疑慮"
+            elif score <= 80:
+                badge_color = "#F97316"
+                status_title = "🟠 中度風險"
+            else:
+                badge_color = "#EF4444"
+                status_title = "🔴 極度危險 (高機率詐騙)"
 
-                # 鑑識論證
-                st.markdown("##### 📑 鑑識論證與手法剖析：")
-                st.write(result.evidence_analysis)
+            # 風險總覽卡片
+            st.markdown(f"""
+            <div style='background-color:{badge_color}18; border: 1px solid {badge_color}44; border-left: 6px solid {badge_color}; padding: 1rem; border-radius: 8px; margin-bottom: 1.2rem;'>
+                <h3 style='color:{badge_color}; margin:0; font-size:1.35rem;'>{status_title}</h3>
+                <p style='margin: 0.6rem 0 0 0; font-size: 1.05rem; color: #F8FAFC;'>
+                    <b style='color:#CBD5E1;'>量化風險指數：</b> <code style='color:#FEF08A; background-color:rgba(0,0,0,0.5); padding:0.18rem 0.5rem; border-radius:4px; font-weight:bold;'>{score} / 100</code> &nbsp;|&nbsp; 
+                    <b style='color:#CBD5E1;'>判定手法類型：</b> <code style='color:#38BDF8; background-color:rgba(0,0,0,0.5); padding:0.18rem 0.5rem; border-radius:4px; font-weight:bold;'>{ra.primary_scam_type}</code>
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
 
-                # 破綻清單
-                if result.red_flags:
-                    st.markdown("##### 🚩 偵測到的可疑特徵點 (破綻標註)：")
-                    for rf in result.red_flags:
-                        st.markdown(f"""
-                        <div class='red-flag-box'>
-                            <strong>[{rf.severity.value}]</strong> 「<code>{rf.quote}</code>」 ➔ <em>{rf.issue_type}</em>
-                        </div>
-                        """, unsafe_allow_html=True)
+            # 鑑識論證
+            st.markdown("##### 📑 鑑識論證與手法剖析：")
+            st.write(result.evidence_analysis)
 
-                # 建議防禦指引
-                st.markdown("##### 🛡️ 官方安全防護與處置指南：")
-                with st.expander("👉 展開查看詳細防範行動指引", expanded=True):
-                    st.markdown("**🚨 當下切勿進行之危險動作：**")
-                    for act in result.actionable_guidance.immediate_actions:
-                        st.markdown(f"- ❌ {act}")
-                    
-                    st.markdown("**📞 官方正當查證管道：**")
-                    for ver in result.actionable_guidance.official_verification:
-                        st.markdown(f"- ✅ {ver}")
+            # 破綻清單
+            if result.red_flags:
+                st.markdown("##### 🚩 偵測到的可疑特徵點 (破綻標註)：")
+                for rf in result.red_flags:
+                    st.markdown(f"""
+                    <div class='red-flag-box'>
+                        <strong>[{rf.severity.value}]</strong> 「<code>{rf.quote}</code>」 ➔ <em>{rf.issue_type}</em>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-                    if result.actionable_guidance.recommended_safe_reply:
-                        st.markdown(f"**💬 建議安全回覆話術：**\n> `{result.actionable_guidance.recommended_safe_reply}`")
+            # 建議防禦指引
+            st.markdown("##### 🛡️ 官方安全防護與處置指南：")
+            with st.expander("👉 展開查看詳細防範行動指引", expanded=True):
+                st.markdown("**🚨 當下切勿進行之危險動作：**")
+                for act in result.actionable_guidance.immediate_actions:
+                    st.markdown(f"- ❌ {act}")
+                
+                st.markdown("**📞 官方正當查證管道：**")
+                for ver in result.actionable_guidance.official_verification:
+                    st.markdown(f"- ✅ {ver}")
 
-        elif not analyze_btn:
+                if result.actionable_guidance.recommended_safe_reply:
+                    st.markdown(f"**💬 建議安全回覆話術：**\n> `{result.actionable_guidance.recommended_safe_reply}`")
+
+        else:
             st.info("💡 請在左側輸入訊息內容或點選範例，並點擊「啟動 AI 鑑識分析」。")
 
 
