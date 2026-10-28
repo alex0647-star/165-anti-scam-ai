@@ -522,16 +522,15 @@
                 const vr = await resp.json();
                 const score = vr.scam_risk_score || 10;
                 const dfProb = vr.deepfake_probability || 12;
-                const badgeColor = (score <= 30 && dfProb <= 30) ? '#22C55E' : ((score <= 65 && dfProb <= 65) ? '#F97316' : '#EF4444');
+                const aiColor = dfProb <= 30 ? '#22C55E' : (dfProb <= 65 ? '#F97316' : '#EF4444');
+                const scamColor = score <= 30 ? '#22C55E' : (score <= 65 ? '#F97316' : '#EF4444');
+                const vm = vr.visual_metrics || {};
 
                 let html = `
-                <div style="background-color:${badgeColor}18; border:1px solid ${badgeColor}55; border-left:6px solid ${badgeColor};" class="p-4 rounded-xl mb-4">
-                    <h3 style="color:${badgeColor};" class="text-lg font-extrabold">${vr.verdict_title}</h3>
-                    <div class="mt-2 flex flex-wrap gap-3 text-xs">
-                        <span>🤖 AI 深偽合成機率：<code class="px-2 py-0.5 rounded bg-black/50 text-yellow-300 font-bold">${dfProb}%</code></span>
-                        <span>🚨 綜合詐騙風險：<code class="px-2 py-0.5 rounded bg-black/50 text-rose-300 font-bold">${score} / 100</code></span>
-                        <span>📌 判定類型：<code class="px-2 py-0.5 rounded bg-black/50 text-sky-300 font-bold">${vr.primary_type}</code></span>
-                    </div>
+                <div class="mb-4 p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs space-y-1">
+                    <div>📺 <b>來源平台：</b><code class="text-sky-300">${vr.platform || '網路影音'}</code> ｜ 📌 <b>綜合類型：</b><code class="text-amber-200">${vr.primary_type || ''}</code></div>
+                    <div>📝 <b>影片標題：</b><code class="text-slate-200">${vr.title || '未提供標題'}</code></div>
+                    <div>👤 <b>發布頻道：</b><code class="text-amber-300">${vr.author_name || '匿名/未公開頻道'}</code> ${vr.is_official_channel ? (score <= 30 ? '🟢 (官方認證媒體/機構)' : '⚠️ (遭擷取畫面搭配詐騙引流文案)') : '⚠️ (非官方認證頻道)'}</div>
                 </div>`;
 
                 if (vr.grid_image_b64) {
@@ -542,20 +541,58 @@
                     </div>`;
                 }
 
-                const vm = vr.visual_metrics || {};
+                // =========================================================
+                // 【第一部分：1. AI 合成率鑑識】
+                // =========================================================
                 html += `
-                <div class="mb-4 p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs space-y-1">
-                    <div>📺 <b>來源平台：</b><code class="text-sky-300">${vr.platform || '網路影音'}</code></div>
-                    <div>📝 <b>影片標題：</b><code class="text-slate-200">${vr.title || '未提供標題'}</code></div>
-                    <div>👤 <b>發布頻道：</b><code class="text-amber-300">${vr.author_name || '匿名/未公開頻道'}</code> ${vr.is_official_channel ? (score <= 30 ? '🟢 (官方認證媒體/機構)' : '⚠️ (遭擷取畫面搭配詐騙引流文案)') : '⚠️ (非官方認證頻道)'}</div>
-                    <div>🔬 <b>人臉/背景高頻紋理比值：</b><code class="text-yellow-300">${vm.skin_smoothing_ratio || 1.0}x</code> ｜ <b>跨幀閃爍度：</b><code class="text-yellow-300">${vm.temporal_flicker_score || 0.0}</code></div>
-                </div>`;
+                <div style="background-color:${aiColor}14; border:1px solid ${aiColor}55; border-left:6px solid ${aiColor};" class="p-4 rounded-xl mb-4">
+                    <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
+                        <h3 style="color:${aiColor};" class="text-base font-extrabold">🤖 第一部分：1. AI 合成率鑑識</h3>
+                        <span class="px-2.5 py-1 rounded-lg bg-black/60 text-yellow-300 font-extrabold text-sm">AI 合成率：${dfProb}%</span>
+                    </div>
+                    <div class="w-full bg-slate-800 rounded-full h-2.5 mb-2.5 overflow-hidden">
+                        <div style="width:${dfProb}%; background-color:${aiColor};" class="h-2.5 rounded-full"></div>
+                    </div>
+                    <div class="text-xs font-bold text-white mb-1.5">${vr.ai_verdict_label || ''}</div>
+                    <div class="text-xs text-slate-300 leading-relaxed whitespace-pre-line bg-slate-950/60 p-3 rounded-lg border border-slate-800/80 mb-2">${vr.ai_synthesis_summary || ''}</div>
+                    <div class="text-xs text-slate-400">
+                        🔬 <b>電腦視覺頻域指標：</b>人臉/背景高頻紋理比值 <code class="text-yellow-300">${vm.skin_smoothing_ratio || 1.0}x</code> ｜ 跨幀閃爍度 <code class="text-yellow-300">${vm.temporal_flicker_score || 0.0}</code>
+                    </div>`;
 
-                if (vr.forensic_flags && vr.forensic_flags.length > 0) {
-                    html += `<div class="space-y-2 mb-3"><h4 class="font-bold text-rose-400 text-xs">🚩 偵測到的 AI 深偽與詐騙破綻：</h4>`;
-                    vr.forensic_flags.forEach(ff => {
+                if (vr.ai_synthesis_flags && vr.ai_synthesis_flags.length > 0) {
+                    html += `<div class="space-y-1.5 mt-2.5">`;
+                    vr.ai_synthesis_flags.forEach(ff => {
                         html += `
-                        <div class="red-flag-item p-3 rounded-lg text-xs">
+                        <div class="red-flag-item p-2.5 rounded-lg text-xs">
+                            <strong class="text-rose-400">[AI 偽影特徵]</strong>
+                            「<code class="px-1.5 py-0.5 rounded bg-black/50 text-yellow-200">${ff.quote}</code>」 ➔
+                            <span>${ff.issue_type}</span>
+                        </div>`;
+                    });
+                    html += `</div>`;
+                }
+                html += `</div>`;
+
+                // =========================================================
+                // 【第二部分：2. 辨別是否為詐騙】
+                // =========================================================
+                html += `
+                <div style="background-color:${scamColor}14; border:1px solid ${scamColor}55; border-left:6px solid ${scamColor};" class="p-4 rounded-xl mb-2">
+                    <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
+                        <h3 style="color:${scamColor};" class="text-base font-extrabold">🚨 第二部分：2. 辨別是否為詐騙</h3>
+                        <span class="px-2.5 py-1 rounded-lg bg-black/60 text-rose-300 font-extrabold text-sm">詐騙風險指數：${score} / 100</span>
+                    </div>
+                    <div class="w-full bg-slate-800 rounded-full h-2.5 mb-2.5 overflow-hidden">
+                        <div style="width:${score}%; background-color:${scamColor};" class="h-2.5 rounded-full"></div>
+                    </div>
+                    <div class="text-xs font-bold text-white mb-1.5">${vr.scam_verdict_label || ''}</div>
+                    <div class="text-xs text-slate-300 leading-relaxed whitespace-pre-line bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">${vr.scam_analysis_summary || ''}</div>`;
+
+                if (vr.scam_flags && vr.scam_flags.length > 0) {
+                    html += `<div class="space-y-1.5 mt-2.5"><div class="font-bold text-rose-400 text-xs">🚩 165 詐騙話術與引流破綻：</div>`;
+                    vr.scam_flags.forEach(ff => {
+                        html += `
+                        <div class="red-flag-item p-2.5 rounded-lg text-xs">
                             <strong class="text-rose-400">[${ff.severity || 'HIGH'}]</strong>
                             「<code class="px-1.5 py-0.5 rounded bg-black/50 text-yellow-200">${ff.quote}</code>」 ➔
                             <span>${ff.issue_type}</span>
@@ -563,8 +600,10 @@
                     });
                     html += `</div>`;
                 } else {
-                    html += `<div class="safe-item p-3 rounded-lg text-xs">🟢 經檢驗影片關鍵影格、頻道來源與字幕內容，未發現 AI 換臉冒用名人或誘導加 LINE 領飆股之詐騙特徵。</div>`;
+                    html += `<div class="safe-item p-2.5 rounded-lg text-xs mt-2.5">🟢 經 165 防詐引擎檢驗頻道來源與字幕話術，未發現假冒名人報明牌或誘導加 LINE 匯款之詐騙特徵。</div>`;
                 }
+                html += `</div>`;
+
                 document.getElementById('video-result-container').innerHTML = html;
             } catch (e) {
                 document.getElementById('video-result-container').innerHTML = `<div class="text-rose-400">影片鑑識失敗：${e}</div>`;

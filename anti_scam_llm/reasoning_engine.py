@@ -60,15 +60,26 @@ class AntiScamForensicEngine:
             if v_res.get("is_official_channel") and not v_res.get("matched_scam_keywords"):
                 final_score = 5
             v_res["scam_risk_score"] = final_score
-            # 合併文字鑑識紅旗至影片紅旗清單
+            if final_score >= 75:
+                v_res["scam_verdict_label"] = f"🔴 判定為詐騙引流影片！(風險指數：{final_score} / 100)"
+            elif final_score >= 45:
+                v_res["scam_verdict_label"] = f"🟠 疑似詐騙或高風險未授權轉載 (風險指數：{final_score} / 100)"
+            else:
+                v_res["scam_verdict_label"] = f"🟢 非詐騙影片 / 安全正常影音 (風險指數：{final_score} / 100)"
+
+            # 合併文字鑑識紅旗至第二部分詐騙紅旗清單與總清單
             existing_quotes = {f["quote"] for f in v_res.get("forensic_flags", [])}
+            if "scam_flags" not in v_res:
+                v_res["scam_flags"] = []
             for rf in text_result.red_flags:
                 if rf.quote not in existing_quotes and final_score > 30:
-                    v_res["forensic_flags"].append({
+                    flag_obj = {
                         "severity": rf.severity.value,
                         "quote": rf.quote,
                         "issue_type": rf.issue_type
-                    })
+                    }
+                    v_res["scam_flags"].append(flag_obj)
+                    v_res["forensic_flags"].append(flag_obj)
         return v_res
 
     def analyze(self, payload: InputPayload, _skip_video_hook: bool = False) -> AntiScamAnalysisResult:

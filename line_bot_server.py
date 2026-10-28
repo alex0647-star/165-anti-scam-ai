@@ -209,34 +209,38 @@ def download_line_video(message_id: str) -> str:
 
 
 def format_line_video_response(vr: dict) -> str:
-    """將 AI 深偽影片與短影音鑑識結果格式化為 LINE 手機訊息排版"""
+    """將 AI 深偽影片與短影音鑑識結果格式化為 LINE 手機訊息排版（分兩大部分：1. AI合成率、2. 辨別是否為詐騙）"""
     v_score = vr.get("scam_risk_score", 10)
     df_prob = vr.get("deepfake_probability", 12)
+    vm = vr.get("visual_metrics", {})
     lines = [
-        f"🎬 {vr.get('verdict_title', '【AI 深偽影片鑑識報告】')}",
-        f"🤖 AI 深偽合成機率：{df_prob}%",
-        f"📊 綜合詐騙風險指數：{v_score} / 100",
-        f"🎯 判定類型：{vr.get('primary_type', '一般影音')}",
-        "─────────────────",
+        f"🎬 【165 影片雙維度鑑識報告】",
         f"📺 來源平台：{vr.get('platform', 'LINE 影片上傳')}",
     ]
     if vr.get("title"):
         lines.append(f"📝 影片標題：{vr['title'][:60]}")
     if vr.get("author_name"):
-        ch_tag = " ✅[官方頻道]" if vr.get("is_official_channel") else " ⚠️[非官方認證]"
+        ch_tag = " ✅[官方頻道]" if (vr.get("is_official_channel") and v_score <= 30) else " ⚠️[非官方/遭擷取]"
         lines.append(f"👤 發布頻道：{vr['author_name']}{ch_tag}")
 
-    vm = vr.get("visual_metrics", {})
-    lines.append(f"🔬 人臉/背景紋理比值：{vm.get('skin_smoothing_ratio', 1.0)}x")
-    if vr.get("gemini_comment"):
-        lines.append("─────────────────")
-        lines.append(f"🧠 【多模態視覺深偽剖析】\n{vr['gemini_comment']}")
+    lines.extend([
+        "─────────────────",
+        f"🤖 【1️⃣ 第一部分：AI 合成率鑑識】",
+        f"• AI 合成率：{df_prob}%",
+        f"• 判定結果：{vr.get('ai_verdict_label', '')}",
+        f"• 頻域指標：人臉/背景紋理比值 {vm.get('skin_smoothing_ratio', 1.0)}x",
+        f"• 深偽剖析：{vr.get('ai_synthesis_summary', '')}",
+        "─────────────────",
+        f"🚨 【2️⃣ 第二部分：辨別是否為詐騙】",
+        f"• 詐騙風險指數：{v_score} / 100",
+        f"• 判定結果：{vr.get('scam_verdict_label', '')}",
+        f"• 防詐剖析：{vr.get('scam_analysis_summary', '')}",
+    ])
 
-    if vr.get("forensic_flags"):
-        lines.append("─────────────────")
-        lines.append("🚩 【偵測到的深偽與詐騙破綻】")
-        for ff in vr["forensic_flags"][:4]:
-            lines.append(f"• [{ff.get('severity', 'HIGH')}] 「{ff.get('quote')}」➔ {ff.get('issue_type')}")
+    if vr.get("scam_flags"):
+        lines.append("🚩 偵測到的詐騙破綻：")
+        for ff in vr["scam_flags"][:3]:
+            lines.append(f"• 「{ff.get('quote')}」➔ {ff.get('issue_type')}")
 
     lines.append("─────────────────")
     lines.append("🛡️ 【165 防範 AI 深偽詐騙指南】")

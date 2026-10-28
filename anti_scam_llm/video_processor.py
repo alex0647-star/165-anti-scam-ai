@@ -519,14 +519,45 @@ class VideoForensicProcessor:
         gemini_res = self._call_gemini_video_forensics(grid_image_path, meta)
         gemini_comment = gemini_res.get("gemini_forensic_comment", "") if gemini_res else ""
 
-        # 綜合計算「AI 深偽合成可能性 (deepfake_probability)」與「整體詐騙風險分數 (risk_score)」
+        # =====================================================================
+        # 分離式雙維度評估：
+        # 【第一部分】1. AI 合成率 (deepfake_probability) 與視覺深偽剖析
+        # 【第二部分】2. 辨別是否為詐騙 (scam_risk_score) 與 165 詐騙話術剖析
+        # =====================================================================
         deepfake_prob = 12
         scam_risk_score = 10
-        forensic_flags: List[Dict[str, str]] = []
+        ai_synthesis_flags: List[Dict[str, str]] = []
+        scam_flags: List[Dict[str, str]] = []
 
-        # 1. 名人肖像冒用 + (非官方免洗頻道 或 搭配投資/贈書/加LINE詐騙引流話術)
+        # --- 【第一部分：計算 1. AI 合成率 (deepfake_prob)】 ---
+        if matched_ai_kws and (not is_official_channel or matched_scam_kws):
+            deepfake_prob = max(deepfake_prob, 88)
+            ai_synthesis_flags.append({
+                "severity": "HIGH",
+                "quote": f"AI 合成技術特徵：{'、'.join(matched_ai_kws[:4])}",
+                "issue_type": "檢出 AI 視訊生成 / Deepfake 換臉 / 語音克隆模型特徵（常見破綻：說話嘴型與聲音節奏不同步、下顎與臉部邊緣融合模糊、眼神與眨眼頻率機械化）"
+            })
+
         if mentioned_celebs and (not is_official_channel or matched_scam_kws) and (matched_scam_kws or matched_ai_kws or not author_name):
             deepfake_prob = max(deepfake_prob, 94)
+            celeb_str = "、".join(dict.fromkeys(mentioned_celebs))
+            ai_synthesis_flags.append({
+                "severity": "HIGH",
+                "quote": f"名人肖像與聲紋偽造：{celeb_str}",
+                "issue_type": f"高機率使用 Deepfake 臉部替換或 HeyGen / ElevenLabs 語音克隆技術，偽造「{celeb_str}」開口說話之深偽畫面"
+            })
+
+        if visual_metrics.get("edge_artifact_anomaly") and (not is_official_channel or matched_scam_kws):
+            deepfake_prob = max(deepfake_prob, 78 if (matched_scam_kws or mentioned_celebs) else 52)
+            for v_note in visual_metrics.get("visual_notes", []):
+                ai_synthesis_flags.append({
+                    "severity": "MEDIUM",
+                    "quote": f"人臉/背景高頻紋理比值：{visual_metrics['skin_smoothing_ratio']}x ｜ 跨幀閃爍度：{visual_metrics['temporal_flicker_score']}",
+                    "issue_type": v_note
+                })
+
+        # --- 【第二部分：計算 2. 辨別是否為詐騙 (scam_risk_score)】 ---
+        if mentioned_celebs and (not is_official_channel or matched_scam_kws) and (matched_scam_kws or not author_name):
             scam_risk_score = max(scam_risk_score, 96)
             celeb_str = "、".join(dict.fromkeys(mentioned_celebs))
             ch_label = (
@@ -534,57 +565,85 @@ class VideoForensicProcessor:
                 if (is_official_channel and matched_scam_kws)
                 else (f"「{author_name}」（非官方認證頻道）" if author_name else "未認證之匿名/免洗帳號")
             )
-            forensic_flags.append({
+            scam_flags.append({
                 "severity": "HIGH",
-                "quote": f"影片人物：{celeb_str} ｜ 來源檢核：{ch_label}",
-                "issue_type": f"典型【AI Deepfake 換臉/語音克隆冒用名人詐騙】：畫面或標題冒用「{celeb_str}」名義搭配飆股/贈書/加LINE引流，極高機率為 AI 合成影像或盜用片段改製配音！"
+                "quote": f"冒用名人：{celeb_str} ｜ 來源頻道：{ch_label}",
+                "issue_type": f"典型【假冒名人權威背書詐騙】：未經授權冒用「{celeb_str}」肖像，誘騙民眾加入投資群組或領取飆股名單！"
             })
 
-        # 2. 明確檢出 AI 生成 / Deepfake 合成標籤或特徵
-        if matched_ai_kws and (not is_official_channel or matched_scam_kws):
-            deepfake_prob = max(deepfake_prob, 88)
-            scam_risk_score = max(scam_risk_score, 85 if matched_scam_kws else 72)
-            forensic_flags.append({
-                "severity": "HIGH",
-                "quote": f"AI 深偽合成特徵：{'、'.join(matched_ai_kws[:4])}",
-                "issue_type": "偵測到 AI 視訊生成 / Deepfake 換臉 / AI 語音克隆特徵（常見破綻：說話嘴型與聲音節奏不同步、臉部邊緣融合模糊、眼神與眨眼頻率僵硬）"
-            })
-
-        # 3. 電腦視覺高頻紋理與邊緣偽影異常
-        if visual_metrics.get("edge_artifact_anomaly") and (not is_official_channel or matched_scam_kws):
-            deepfake_prob = max(deepfake_prob, 78 if (matched_scam_kws or mentioned_celebs) else 45)
-            for v_note in visual_metrics.get("visual_notes", []):
-                if matched_scam_kws or mentioned_celebs or matched_ai_kws:
-                    forensic_flags.append({
-                        "severity": "MEDIUM",
-                        "quote": f"視覺頻域紋理比值：{visual_metrics['skin_smoothing_ratio']}x",
-                        "issue_type": v_note
-                    })
-
-        # 4. 影片字幕或說明欄含有加 LINE / 領飆股 / 免費贈書等引流話術
         if matched_scam_kws:
             scam_risk_score = max(scam_risk_score, 95)
             deepfake_prob = max(deepfake_prob, 85 if mentioned_celebs else 75)
-            forensic_flags.append({
+            scam_flags.append({
                 "severity": "HIGH",
-                "quote": f"影片引流話術：{'、'.join(matched_scam_kws[:4])}",
-                "issue_type": "短影音字幕或資訊欄出現典型「免費贈書 / 領取飆股名單 / 點擊連結加 LINE」詐騙引流話術，常搭配 AI 換臉名人或 AI 數字人主播行騙"
+                "quote": f"詐騙引流話術：{'、'.join(matched_scam_kws[:4])}",
+                "issue_type": "影片字幕或資訊欄出現典型「免費贈書 / 領取飆股名單 / 保證獲利 / 點擊連結加 LINE」詐騙引流話術"
             })
 
-        # 5. 若為知名官方新聞台/警政署165/企業頻道且無任何詐騙引流詞，判定為安全官方宣導或正常新聞影音
+        # 若為單純 AI 生成影片但無詐騙引流話術
+        if deepfake_prob >= 75 and not matched_scam_kws:
+            scam_risk_score = max(scam_risk_score, 65 if mentioned_celebs else 35)
+
+        # 若為知名官方新聞台/警政署165/企業頻道且無任何詐騙引流詞，判定為安全官方宣導或正常新聞影音
         if is_official_channel and not matched_scam_kws:
             deepfake_prob = 5
             scam_risk_score = 5
-            forensic_flags = []
+            ai_synthesis_flags = []
+            scam_flags = []
 
-        if scam_risk_score >= 80 or deepfake_prob >= 80:
+        forensic_flags = ai_synthesis_flags + scam_flags
+
+        # 組裝【第一部分：AI 合成率分析】文字與標籤
+        if deepfake_prob >= 75:
+            ai_verdict_label = f"🔴 極高機率為 AI 合成 / Deepfake 改造 ({deepfake_prob}%)"
+            ai_synthesis_summary = (
+                f"經電腦視覺頻域紋理檢測（人臉/背景高頻比值 {visual_metrics.get('skin_smoothing_ratio', 1.0)}x、跨幀閃爍度 {visual_metrics.get('temporal_flicker_score', 0.0)}）"
+                f"與深偽特徵核驗，本影片具有極高之 AI 合成改造跡象（AI 合成率 {deepfake_prob}%）。"
+                f"常見於使用 Deepfake 換臉、HeyGen 數字人或 AI 語音克隆技術生成嘴型並覆蓋原聲。"
+            )
+        elif deepfake_prob >= 45:
+            ai_verdict_label = f"🟠 中度疑似含 AI 合成或濾鏡改造 ({deepfake_prob}%)"
+            ai_synthesis_summary = (
+                f"畫面檢出局部高頻紋理平滑化或剪輯合成特徵（AI 合成率 {deepfake_prob}%），可能包含部分 AI 輔助生成畫面、AI 配音或重度美顏濾鏡。"
+            )
+        else:
+            ai_verdict_label = f"🟢 自然真實拍攝影像 ({deepfake_prob}%)"
+            ai_synthesis_summary = (
+                f"經關鍵影格空間頻域與跨幀時序檢測（高頻紋理比值 {visual_metrics.get('skin_smoothing_ratio', 1.0)}x），"
+                f"畫面光影、臉部邊緣與時序連續性自然，未發現明顯 AI 換臉或深偽合成偽影（AI 合成率僅 {deepfake_prob}%）。"
+            )
+        if gemini_comment:
+            ai_synthesis_summary += f"\n• Gemini 多模態視覺剖析：{gemini_comment}"
+
+        # 組裝【第二部分：辨別是否為詐騙】文字與標籤
+        if scam_risk_score >= 75:
+            scam_verdict_label = f"🔴 判定為詐騙引流影片！(風險指數：{scam_risk_score} / 100)"
+            scam_analysis_summary = (
+                f"經 165 防詐規則與知識庫比對，本影片明確屬於【高風險詐騙引流短影音】！"
+                f"{'不法分子冒用「' + '、'.join(dict.fromkeys(mentioned_celebs)) + '」等名人肖像背書，並' if mentioned_celebs else '影片透過深偽畫面'}"
+                f"搭配「{'、'.join(matched_scam_kws[:4]) if matched_scam_kws else '私訊加 LINE / 領取飆股'}」等典型投資詐騙話術，"
+                f"意圖誘騙民眾點擊連結加入詐騙 LINE 群組或交付金錢。"
+            )
+        elif scam_risk_score >= 45:
+            scam_verdict_label = f"🟠 疑似詐騙或高風險未授權轉載 (風險指數：{scam_risk_score} / 100)"
+            scam_analysis_summary = (
+                f"本影片發布於非官方認證頻道且涉及名人或敏感話題（詐騙風險 {scam_risk_score}/100），雖未直接在標題暴露完整匯款帳號，仍極可能於留言區置頂或主頁進行二次詐騙引流，請提高警覺！"
+            )
+        else:
+            scam_verdict_label = f"🟢 非詐騙影片 / 安全正常影音 (風險指數：{scam_risk_score} / 100)"
+            scam_analysis_summary = (
+                f"經核驗發布頻道來源（{author_name or '一般頻道'}{' ✅ 官方認證媒體/機構' if is_official_channel else ''}）與影片字幕內容，"
+                f"未發現任何「免費贈書、報明牌、保證獲利、誘導加私人 LINE 帳號」等詐騙引流特徵，屬於安全之正常影音內容。"
+            )
+
+        if scam_risk_score >= 75 or deepfake_prob >= 75:
             verdict_title = "🔴 高風險 AI 深偽 / 詐騙引流影片"
             primary_type = (
-                f"AI Deepfake 換臉冒用名人詐騙短影音 ({'、'.join(mentioned_celebs[:2])})"
-                if mentioned_celebs else
+                f"AI Deepfake 換臉冒用名人詐騙短影音 ({'、'.join(dict.fromkeys(mentioned_celebs[:2]))})"
+                if (mentioned_celebs and scam_risk_score >= 75) else
                 ("AI 生成深偽影片與假投資引流詐騙" if matched_scam_kws else "疑似 AI 生成 / Deepfake 合成改造影片")
             )
-        elif scam_risk_score >= 55 or deepfake_prob >= 55:
+        elif scam_risk_score >= 45 or deepfake_prob >= 45:
             verdict_title = "🟠 中度疑慮 (疑似 AI 合成或異常短影音)"
             primary_type = "疑似 AI 合成或非官方轉載影音"
         else:
@@ -592,22 +651,31 @@ class VideoForensicProcessor:
             primary_type = "正常影音內容 / 官方頻道發布" if is_official_channel else "一般正常影音內容"
 
         summary_report = (
-            f"【🎬 165 AI 視訊深偽與短影音鑑識報告】\n"
-            f"• 影音平台：{meta.get('platform')}\n"
-            f"• 影片標題：{meta.get('title') or '（未提供標題）'}\n"
+            f"【🎬 165 影片雙維度鑑識報告】\n"
+            f"• 影音平台：{meta.get('platform')}｜標題：{meta.get('title') or '（未提供標題）'}\n"
             f"• 發布頻道：{author_name or '（匿名或未公開頻道）'}{' ✅ [官方可信頻道]' if is_official_channel else ''}\n"
-            f"• AI 深偽合成指數：{deepfake_prob} / 100\n"
-            f"• 綜合詐騙風險指數：{scam_risk_score} / 100\n"
+            f"────────────────────────\n"
+            f"【1️⃣ 第一部分：AI 合成率鑑識】\n"
+            f"• AI 合成率：{deepfake_prob}% ➔ {ai_verdict_label}\n"
+            f"• 視覺深偽剖析：{ai_synthesis_summary}\n"
+            f"────────────────────────\n"
+            f"【2️⃣ 第二部分：辨別是否為詐騙】\n"
+            f"• 詐騙風險指數：{scam_risk_score} / 100 ➔ {scam_verdict_label}\n"
+            f"• 165 防詐剖析：{scam_analysis_summary}\n"
         )
-        if gemini_comment:
-            summary_report += f"• 多模態視覺深偽剖析：{gemini_comment}\n"
 
         return {
             "success": True,
             "verdict_title": verdict_title,
             "primary_type": primary_type,
             "deepfake_probability": deepfake_prob,
-            "scam_risk_score": max(scam_risk_score, deepfake_prob if deepfake_prob >= 75 else scam_risk_score),
+            "scam_risk_score": scam_risk_score,
+            "ai_verdict_label": ai_verdict_label,
+            "ai_synthesis_summary": ai_synthesis_summary,
+            "ai_synthesis_flags": ai_synthesis_flags,
+            "scam_verdict_label": scam_verdict_label,
+            "scam_analysis_summary": scam_analysis_summary,
+            "scam_flags": scam_flags,
             "platform": meta.get("platform", ""),
             "title": meta.get("title", ""),
             "author_name": author_name,

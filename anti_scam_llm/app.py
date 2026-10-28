@@ -497,26 +497,17 @@ with tab_video:
             vr = st.session_state["last_video_report"]
             v_score = vr.get("scam_risk_score", 10)
             df_prob = vr.get("deepfake_probability", 12)
+            ai_color = "#22C55E" if df_prob <= 30 else ("#F97316" if df_prob <= 65 else "#EF4444")
+            scam_color = "#22C55E" if v_score <= 30 else ("#F97316" if v_score <= 65 else "#EF4444")
+            vm = vr.get("visual_metrics", {})
 
-            if v_score <= 30 and df_prob <= 30:
-                v_color = "#22C55E"
-            elif v_score <= 65 and df_prob <= 65:
-                v_color = "#F97316"
-            else:
-                v_color = "#EF4444"
-
-            st.markdown(f"""
-            <div style='background-color:{v_color}18; border: 1px solid {v_color}44; border-left: 6px solid {v_color}; padding: 1rem; border-radius: 8px; margin-bottom: 1.0rem;'>
-                <h3 style='color:{v_color}; margin:0; font-size:1.35rem;'>{vr.get("verdict_title")}</h3>
-                <p style='margin: 0.6rem 0 0 0; font-size: 1.02rem; color: #F8FAFC;'>
-                    <b style='color:#CBD5E1;'>🤖 AI 深偽合成機率：</b> <code style='color:#FEF08A; background-color:rgba(0,0,0,0.5); padding:0.18rem 0.5rem; border-radius:4px; font-weight:bold;'>{df_prob}%</code> &nbsp;|&nbsp;
-                    <b style='color:#CBD5E1;'>🚨 綜合詐騙風險：</b> <code style='color:#F87171; background-color:rgba(0,0,0,0.5); padding:0.18rem 0.5rem; border-radius:4px; font-weight:bold;'>{v_score} / 100</code><br>
-                    <b style='color:#CBD5E1;'>📌 判定類型：</b> <code style='color:#38BDF8; background-color:rgba(0,0,0,0.5); padding:0.18rem 0.5rem; border-radius:4px;'>{vr.get("primary_type")}</code>
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
-
-            # 展示 2x2 關鍵影格時序鑑識網格圖
+            # 影片元數據與 2x2 關鍵影格時序鑑識網格圖
+            st.markdown(
+                f"- **📺 來源平台**：`{vr.get('platform')}` ｜ **📌 綜合類型**：`{vr.get('primary_type')}`\n"
+                f"- **📝 影片標題**：`{vr.get('title') or '未偵測到標題'}`\n"
+                f"- **👤 發布頻道**：`{vr.get('author_name') or '未公開 / 匿名帳號'}` "
+                f"{('🟢 *(已確認為官方媒體/機構頻道)*' if v_score <= 30 else '⚠️ *(遭擷取畫面搭配詐騙引流文案)*') if vr.get('is_official_channel') else '⚠️ *(非官方認證媒體頻道)*'}"
+            )
             grid_p = vr.get("grid_image_path")
             if grid_p and os.path.exists(grid_p):
                 st.image(
@@ -525,23 +516,42 @@ with tab_video:
                     use_container_width=True
                 )
 
-            with st.expander("📊 展開查看【頻道來源元數據 & 視覺頻域指標】", expanded=True):
-                vm = vr.get("visual_metrics", {})
-                st.markdown(
-                    f"- **📺 來源平台**：`{vr.get('platform')}`\n"
-                    f"- **📝 影片標題**：`{vr.get('title') or '未偵測到標題'}`\n"
-                    f"- **👤 發布頻道**：`{vr.get('author_name') or '未公開 / 匿名帳號'}` "
-                    f"{('🟢 *(已確認為官方媒體/機構頻道)*' if v_score <= 30 else '⚠️ *(遭擷取畫面搭配詐騙引流文案)*') if vr.get('is_official_channel') else '⚠️ *(非官方認證媒體頻道)*'}\n"
-                    f"- **🔬 人臉/背景高頻紋理比值**：`{vm.get('skin_smoothing_ratio', 1.0)}x` "
-                    f"*(>1.65x 代表人像區疑有 AI 換臉平滑濾鏡或合成模糊)*\n"
-                    f"- **⚡ 跨影格時序閃爍指標**：`{vm.get('temporal_flicker_score', 0.0)}`"
-                )
-                if vr.get("gemini_comment"):
-                    st.info(f"🧠 **Gemini 多模態視覺深偽分析**：\n{vr['gemini_comment']}")
+            # =========================================================
+            # 【第一部分：1. AI 合成率鑑識】
+            # =========================================================
+            st.markdown(f"""
+            <div style='background-color:{ai_color}18; border: 1px solid {ai_color}44; border-left: 6px solid {ai_color}; padding: 1rem; border-radius: 8px; margin-bottom: 1.0rem;'>
+                <h4 style='color:{ai_color}; margin:0; font-size:1.18rem;'>🤖 第一部分：1. AI 合成率鑑識 — <code style='color:#FEF08A; background-color:rgba(0,0,0,0.55); padding:0.15rem 0.5rem; border-radius:4px;'>{df_prob}%</code></h4>
+                <p style='margin: 0.45rem 0 0.35rem 0; font-weight:bold; color:#F8FAFC;'>{vr.get("ai_verdict_label", "")}</p>
+                <p style='margin: 0; font-size: 0.94rem; color: #E2E8F0; line-height: 1.55;'>{vr.get("ai_synthesis_summary", "")}</p>
+                <p style='margin: 0.45rem 0 0 0; font-size: 0.85rem; color: #94A3B8;'>
+                    🔬 <b>視覺頻域指標：</b>人臉/背景高頻紋理比值 <code>{vm.get("skin_smoothing_ratio", 1.0)}x</code> ｜ 跨影格時序閃爍指標 <code>{vm.get("temporal_flicker_score", 0.0)}</code>
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
 
-            if vr.get("forensic_flags"):
-                st.markdown("##### 🚩 偵測到的 AI 深偽與詐騙破綻：")
-                for ff in vr["forensic_flags"]:
+            if vr.get("ai_synthesis_flags"):
+                for ff in vr["ai_synthesis_flags"]:
+                    st.markdown(f"""
+                    <div class='red-flag-box'>
+                        <strong>[AI 偽影特徵]</strong> 「<code>{ff.get('quote')}</code>」 ➔ <em>{ff.get('issue_type')}</em>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            # =========================================================
+            # 【第二部分：2. 辨別是否為詐騙】
+            # =========================================================
+            st.markdown(f"""
+            <div style='background-color:{scam_color}18; border: 1px solid {scam_color}44; border-left: 6px solid {scam_color}; padding: 1rem; border-radius: 8px; margin-top: 0.8rem; margin-bottom: 0.8rem;'>
+                <h4 style='color:{scam_color}; margin:0; font-size:1.18rem;'>🚨 第二部分：2. 辨別是否為詐騙 — <code style='color:#F87171; background-color:rgba(0,0,0,0.55); padding:0.15rem 0.5rem; border-radius:4px;'>{v_score} / 100</code></h4>
+                <p style='margin: 0.45rem 0 0.35rem 0; font-weight:bold; color:#F8FAFC;'>{vr.get("scam_verdict_label", "")}</p>
+                <p style='margin: 0; font-size: 0.94rem; color: #E2E8F0; line-height: 1.55;'>{vr.get("scam_analysis_summary", "")}</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+            if vr.get("scam_flags"):
+                st.markdown("##### 🚩 165 詐騙話術與引流破綻：")
+                for ff in vr["scam_flags"]:
                     st.markdown(f"""
                     <div class='red-flag-box'>
                         <strong>[{ff.get('severity', 'HIGH')}]</strong> 「<code>{ff.get('quote')}</code>」 ➔ <em>{ff.get('issue_type')}</em>
@@ -550,7 +560,7 @@ with tab_video:
             else:
                 st.markdown("""
                 <div class='safe-box'>
-                    <strong>[SAFE]</strong> 經檢驗影片關鍵影格、頻道來源與字幕內容，未發現 AI 換臉冒用名人或誘導加 LINE 領飆股之詐騙特徵。
+                    <strong>[SAFE]</strong> 經 165 防詐引擎檢驗頻道來源與字幕話術，未發現假冒名人報明牌或誘導加 LINE 匯款之詐騙特徵。
                 </div>
                 """, unsafe_allow_html=True)
         else:
