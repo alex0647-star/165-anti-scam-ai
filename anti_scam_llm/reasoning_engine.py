@@ -211,34 +211,78 @@ class AntiScamForensicEngine:
         low_text = user_text.lower()
         now_iso = datetime.now(timezone.utc).isoformat()
         
-        # 信任之台灣官方、金融保險、電信電商與正派機構網域白名單 (不視為釣魚連結)
+        # 信任之台灣官方、金融保險、電信電商、交通醫療、民生事業與國際主流機構網域白名單 (共 180+ 常見合法網域)
         TRUSTED_DOMAINS = [
-            "cardif.com.tw", "fubon.com", "ctbcbank.com", "sinopac.com", "kgi.com", "taiwanlife.com",
-            "nanshanlife.com.tw", "cathaylife.com.tw", "cathaybk.com.tw", "esunbank.com.tw", "skl.com.tw",
-            "chubb.com", "allianz.com.tw", "aia.com.tw", "prudential.com.tw", "taishinbank.com.tw",
-            "linebank.com.tw", "nextbank.com.tw", "megabank.com.tw", "hncb.com.tw", "tbb.com.tw",
-            "bot.com.tw", "landbank.com.tw", "post.gov.tw", "twfhclife.com.tw",
-            "twm5g.co", "oppay.tw", "twm.tw", "taiwanmobile.com", "myfone.com.tw", "myvideo.net.tw",
-            "cht.tw", "cht.com.tw", "emome.net", "fet.tw", "fetnet.net", "friday.tw",
-            "sho.pe", "shopee.tw", "momo.dm", "momoshop.com.tw", "momo.com.tw",
-            "pchome.tw", "pchome.com.tw", "pchome24h.com.tw", "books.com.tw",
-            "lin.ee", "line.me", "fami.tw", "family.com.tw", "7-11.com.tw", "openpoint.com.tw", "pxmart.com.tw",
-            "youtube.com", "youtu.be", "google.com", "apple.com", "microsoft.com",
-            "gov.tw", "edu.tw", "org.tw", "net.tw", "com.tw",
-            "taipower.com.tw", "water.gov.tw", "ntu.edu.tw", "moj.gov.tw", "npa.gov.tw", "trendmicro.com"
+            # 1. 台灣 TWNIC 審核頂級網域與縣市政府
+            "gov.tw", "edu.tw", "org.tw", "net.tw", "com.tw", "mil.tw", "gov.taipei", "metro.taipei",
+            # 2. 金控與銀行 (含純網銀與數位帳戶專屬網域)
+            "cathaybk.com.tw", "cathayholdings.com", "fubon.com", "taipeifubon.com.tw",
+            "ctbcbank.com", "ctbcholding.com", "chinatrust.com.tw", "esunbank.com.tw", "esunbank.com", "esunfhc.com",
+            "taishinbank.com.tw", "richart.tw", "sinopac.com", "dawho.tw", "firstbank.com.tw",
+            "megabank.com.tw", "hncb.com.tw", "tcb-bank.com.tw", "bankchb.com", "tbb.com.tw",
+            "landbank.com.tw", "bot.com.tw", "post.gov.tw", "kgi.com", "kgibank.com",
+            "yuanta.com", "yuantabank.com.tw", "skbank.com.tw", "feib.com.tw", "bankee.tw",
+            "ubot.com.tw", "scsb.com.tw", "o-bank.com", "dbs.com.tw", "dbs.com",
+            "hsbc.com.tw", "hsbc.com", "sc.com", "citi.com", "citibank.com.tw",
+            "nextbank.com.tw", "linebank.com.tw", "rakuten-bank.com.tw", "visa.com.tw", "mastercard.com.tw", "jcb.tw",
+            # 3. 人壽與產物保險公司
+            "cardif.com.tw", "cathaylife.com.tw", "nanshanlife.com.tw", "nan-shan.com.tw",
+            "skl.com.tw", "shin-kong.com.tw", "taiwanlife.com", "kgilife.com.tw", "chinalife.com.tw",
+            "transglobe.com.tw", "fglife.com.tw", "mli.com.tw", "yuantalife.com.tw", "twfhclife.com.tw",
+            "firstlife.com.tw", "tcb-life.com.tw", "allianz.com.tw", "allianz.com", "pcalife.com.tw",
+            "prudential.com.tw", "aia.com.tw", "aia.com", "chubb.com", "chubblife.com.tw",
+            "cigna.com.tw", "hontai.com.tw", "msig-mingtai.com.tw", "tmnewa.com.tw", "hotains.com.tw", "cki.com.tw",
+            # 4. 電信業者與官方專屬短網址
+            "cht.com.tw", "cht.tw", "emome.net", "hinet.net",
+            "taiwanmobile.com", "twm5g.co", "twm.tw", "oppay.tw", "myfone.com.tw", "myvideo.net.tw",
+            "fetnet.net", "fet.tw", "friday.tw", "tstartel.com",
+            # 5. 電商購物、超商量販、百貨與行動支付
+            "shopee.tw", "sho.pe", "shp.ee", "momoshop.com.tw", "momo.dm", "momo.com.tw",
+            "pchome.com.tw", "pchome24h.com.tw", "pchome.tw", "books.com.tw",
+            "yahoo.com.tw", "yahoo.com", "yhoo.it", "coupang.com", "etmall.com.tw",
+            "7-11.com.tw", "openpoint.com.tw", "ibon.com.tw", "family.com.tw", "fami.tw", "famiport.com.tw",
+            "hilife.com.tw", "okmart.com.tw", "pxmart.com.tw", "pxpay.com.tw", "pxpayplus.com",
+            "carrefour.com.tw", "costco.com.tw", "ikea.com.tw", "ikea.com", "trplus.com.tw",
+            "cosmed.com.tw", "watsons.com.tw", "poya.com.tw", "eslite.com", "sogo.com.tw", "skm.com.tw", "taipei101.com.tw",
+            "jkopay.com", "pluspay.com.tw", "easycard.com.tw", "i-pass.com.tw", "icash.com.tw", "taiwanpay.com.tw",
+            # 6. 交通運輸、航空、外送叫車、旅遊訂房與售票系統
+            "thsrc.com.tw", "railway.gov.tw", "tymetro.com.tw", "krtc.com.tw", "fetc.net.tw",
+            "china-airlines.com", "evaair.com", "starlux-airlines.com", "tigerairtw.com", "uniair.com.tw", "mandarin-airlines.com",
+            "uber.com", "ubereats.com", "foodpanda.com.tw", "fdp.li", "55688.com.tw", "linego.me",
+            "yoxi.app", "irentcar.com.tw", "ridegoshare.com", "wemoscooter.com", "youbike.com.tw",
+            "klook.com", "kkday.com", "agoda.com", "booking.com", "expedia.com.tw", "hotels.com", "trip.com", "airbnb.com",
+            "liontravel.com", "colatour.com.tw", "eztravel.com.tw",
+            "tixcraft.com", "kktix.com", "kktix.cc", "kham.com.tw", "ticket.com.tw", "opentix.life",
+            # 7. 民生公用事業與物流宅配
+            "taipower.com.tw", "water.gov.tw", "cpc.com.tw",
+            "t-cat.com.tw", "hct.com.tw", "kerrytj.com", "e-can.com.tw", "sf-express.com", "dhl.com", "fedex.com", "ups.com",
+            # 8. 國際科技、社群、影音串流、新聞媒體與求職平台
+            "line.me", "lin.ee", "linecorp.com", "google.com", "google.com.tw", "goo.gl", "g.co", "youtube.com", "youtu.be",
+            "apple.com", "icloud.com", "microsoft.com", "office.com", "live.com", "aka.ms", "linkedin.com",
+            "facebook.com", "fb.com", "fb.me", "fb.watch", "instagram.com", "instagr.am", "threads.net", "whatsapp.com",
+            "netflix.com", "disneyplus.com", "spotify.com", "kkbox.com", "linetv.tw", "iq.com", "gamer.com.tw",
+            "104.com.tw", "1111.com.tw", "cakeresume.com", "cake.me", "yourator.co",
+            "cna.com.tw", "udn.com", "ltn.com.tw", "chinatimes.com", "ettoday.net", "tvbs.com.tw",
+            "github.com", "openai.com", "chatgpt.com", "zoom.us", "notion.so", "canva.com", "dropbox.com", "adobe.com",
+            "trendmicro.com", "whoscall.com", "gogolook.com", "ntu.edu.tw", "moj.gov.tw", "npa.gov.tw"
         ]
 
         def _is_official_trusted_url(url_str: str) -> bool:
             u_l = url_str.lower()
-            # 排除偽造政府或知名機構連字號之釣魚網址 (如 gov-tw, mvdis-gov)
-            if any(fake_pat in u_l for fake_pat in ["gov-tw", "mvdis-", "water-gov", "taipower-gov", "7-11-service", "momo-lucky"]):
+            # 排除偽造政府或知名機構連字號之釣魚網址 (如 gov-tw, mvdis-gov, water-gov, 7-11-service, momo-lucky)
+            if any(fake_pat in u_l for fake_pat in [
+                "gov-tw", "mvdis-", "water-gov", "taipower-gov", "7-11-service",
+                "momo-lucky", "post-gov", "fetc-gov", "line-verify", "line-login"
+            ]):
                 return False
-            # 檢查是否匹配台灣合法登記之 .com.tw / .gov.tw / .edu.tw / .org.tw / .net.tw 或官方白名單網域
+            # 擷取網域 Hostname
             host_m = re.match(r"^https?://([^/:\s]+)", u_l)
             host = host_m.group(1) if host_m else u_l.split("/")[0]
-            if host.endswith((".com.tw", ".gov.tw", ".edu.tw", ".org.tw", ".net.tw")):
+            # 1. 台灣 TWNIC 合法註冊之企業/政府/學校/法人網域
+            if host.endswith((".com.tw", ".gov.tw", ".edu.tw", ".org.tw", ".net.tw", ".mil.tw", ".gov.taipei", ".metro.taipei")):
                 return True
-            return any(host == td or host.endswith("." + td) or td in u_l for td in TRUSTED_DOMAINS)
+            # 2. 比對 180+ 常見官方白名單網域 (精確匹配主網域或子網域)
+            return any(host == td or host.endswith("." + td) for td in TRUSTED_DOMAINS)
 
         # 抽取訊息中所有網址（包含未帶 http:// 之高風險可疑網域）並支援即時短網址展開核驗
         found_urls = re.findall(r"https?://[^\s]+", user_text)
