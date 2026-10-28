@@ -257,7 +257,7 @@ class AntiScamForensicEngine:
             "taipower.com.tw", "water.gov.tw", "cpc.com.tw",
             "t-cat.com.tw", "hct.com.tw", "kerrytj.com", "e-can.com.tw", "sf-express.com", "dhl.com", "fedex.com", "ups.com",
             # 8. 國際科技、社群、影音串流、新聞媒體與求職平台 (不含 goo.gl / bit.ly 等公開免洗短網址)
-            "line.me", "lin.ee", "linecorp.com", "google.com", "google.com.tw", "g.co", "youtube.com", "youtu.be",
+            "line.me", "lin.ee", "linecorp.com", "google.com", "google.com.tw", "google.dev", "ai.dev", "g.co", "youtube.com", "youtu.be",
             "apple.com", "icloud.com", "microsoft.com", "office.com", "live.com", "aka.ms", "linkedin.com",
             "facebook.com", "fb.com", "fb.me", "fb.watch", "instagram.com", "instagr.am", "threads.net", "whatsapp.com",
             "netflix.com", "disneyplus.com", "spotify.com", "kkbox.com", "linetv.tw", "iq.com", "gamer.com.tw",
@@ -710,8 +710,8 @@ class AntiScamForensicEngine:
                     "若已不慎點擊並安裝不明程式，請立即開啟「飛航模式」切斷網路、備份重要照片後將手機恢復原廠設定，並通知親友勿點擊您門號發出的怪異簡訊。"
                 ] if has_trojan_sms_lure else (
                     [
-                        "絕對不要在 LINE 搜尋並加入該陌生 ID（如 q09166），亦不要回覆此 iMessage 簡訊。",
-                        "請直接點擊畫面下方的「Report Junk（回報垃圾訊息）」並刪除對話，切勿點擊任何連結或輸入個資。"
+                        f"絕對不要在 LINE 搜尋並加入訊息中的私人 ID（如 {extracted_line_id or 'gi6600、tt67777、zyq1556'}），亦不要回覆此 iMessage 簡訊。",
+                        "請直接點擊畫面下方的「回報垃圾訊息 (Report Junk)」並刪除對話，切勿點擊任何連結或交付存摺、提款卡與個資。"
                     ] if has_cold_line_lure else [
                         "絕對不要回覆「1」或點擊訊息中的任何短網址連結（如 t.ly/mvdis.gov.tw 或 .top / .vip 網址），切勿輸入信用卡號、LINE 帳密或 OTP 驗證碼。",
                         "切勿聽從指示進行線上繳費、LINE 輔助認證、操作 ATM 或開啟網路銀行。"
