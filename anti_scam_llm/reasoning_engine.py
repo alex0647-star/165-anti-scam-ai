@@ -211,20 +211,34 @@ class AntiScamForensicEngine:
         low_text = user_text.lower()
         now_iso = datetime.now(timezone.utc).isoformat()
         
-        # 信任之台灣官方與正派機構網域白名單 (不視為釣魚連結)
+        # 信任之台灣官方、金融保險、電信電商與正派機構網域白名單 (不視為釣魚連結)
         TRUSTED_DOMAINS = [
+            "cardif.com.tw", "fubon.com", "ctbcbank.com", "sinopac.com", "kgi.com", "taiwanlife.com",
+            "nanshanlife.com.tw", "cathaylife.com.tw", "cathaybk.com.tw", "esunbank.com.tw", "skl.com.tw",
+            "chubb.com", "allianz.com.tw", "aia.com.tw", "prudential.com.tw", "taishinbank.com.tw",
+            "linebank.com.tw", "nextbank.com.tw", "megabank.com.tw", "hncb.com.tw", "tbb.com.tw",
+            "bot.com.tw", "landbank.com.tw", "post.gov.tw", "twfhclife.com.tw",
             "twm5g.co", "oppay.tw", "twm.tw", "taiwanmobile.com", "myfone.com.tw", "myvideo.net.tw",
             "cht.tw", "cht.com.tw", "emome.net", "fet.tw", "fetnet.net", "friday.tw",
             "sho.pe", "shopee.tw", "momo.dm", "momoshop.com.tw", "momo.com.tw",
             "pchome.tw", "pchome.com.tw", "pchome24h.com.tw", "books.com.tw",
             "lin.ee", "line.me", "fami.tw", "family.com.tw", "7-11.com.tw", "openpoint.com.tw", "pxmart.com.tw",
-            "youtube.com", "youtu.be",
-            "gov.tw", "edu.tw", "cathaybk.com.tw", "esunbank.com.tw",
-            "taipower.com.tw", "water.gov.tw", "post.gov.tw", "fubon.com",
-            "ctbcbank.com", "megabank.com.tw", "sinopac.com", "hncb.com.tw",
-            "tbb.com.tw", "bot.com.tw", "landbank.com.tw",
-            "ntu.edu.tw", "moj.gov.tw", "npa.gov.tw", "trendmicro.com"
+            "youtube.com", "youtu.be", "google.com", "apple.com", "microsoft.com",
+            "gov.tw", "edu.tw", "org.tw", "net.tw", "com.tw",
+            "taipower.com.tw", "water.gov.tw", "ntu.edu.tw", "moj.gov.tw", "npa.gov.tw", "trendmicro.com"
         ]
+
+        def _is_official_trusted_url(url_str: str) -> bool:
+            u_l = url_str.lower()
+            # 排除偽造政府或知名機構連字號之釣魚網址 (如 gov-tw, mvdis-gov)
+            if any(fake_pat in u_l for fake_pat in ["gov-tw", "mvdis-", "water-gov", "taipower-gov", "7-11-service", "momo-lucky"]):
+                return False
+            # 檢查是否匹配台灣合法登記之 .com.tw / .gov.tw / .edu.tw / .org.tw / .net.tw 或官方白名單網域
+            host_m = re.match(r"^https?://([^/:\s]+)", u_l)
+            host = host_m.group(1) if host_m else u_l.split("/")[0]
+            if host.endswith((".com.tw", ".gov.tw", ".edu.tw", ".org.tw", ".net.tw")):
+                return True
+            return any(host == td or host.endswith("." + td) or td in u_l for td in TRUSTED_DOMAINS)
 
         # 抽取訊息中所有網址（包含未帶 http:// 之高風險可疑網域）並支援即時短網址展開核驗
         found_urls = re.findall(r"https?://[^\s]+", user_text)
@@ -238,9 +252,8 @@ class AntiScamForensicEngine:
         verified_official_urls = []
         for u in found_urls:
             u_clean = u.rstrip(").,;\"'】」")
-            u_low = u_clean.lower()
             resolved_u = self._resolve_redirect_url(u_clean if u_clean.startswith("http") else f"https://{u_clean}")
-            is_trusted = any(td in u_low for td in TRUSTED_DOMAINS) or any(td in resolved_u.lower() for td in TRUSTED_DOMAINS)
+            is_trusted = _is_official_trusted_url(u_clean) or _is_official_trusted_url(resolved_u)
             if is_trusted:
                 verified_official_urls.append((u_clean, resolved_u))
             else:
@@ -288,10 +301,10 @@ class AntiScamForensicEngine:
         if not is_scam:
             if verified_official_urls:
                 orig_u, dest_u = verified_official_urls[0]
-                if orig_u != dest_u:
-                    safe_evidence = f"經 165 AI 鑑識與短網址實時展開核驗，訊息中之短連結 ({orig_u}) 轉址目標為官方安全網域 ({dest_u})，確認為合法電信/電商官方行銷活動（如台灣大哥大 twm5g.co / oppay.tw 或蝦皮 sho.pe 等官方優惠通知），且無要求匯款轉帳或索取銀行密碼，屬於安全正常訊息。"
+                if orig_u != dest_u and orig_u.rstrip("/") != dest_u.rstrip("/"):
+                    safe_evidence = f"經 165 AI 鑑識與短網址實時展開核驗，訊息中之短連結 ({orig_u}) 轉址目標為官方安全網域 ({dest_u})，確認為合法企業/金融保險/電信電商官方服務或活動通知，且無要求匯款轉帳或索取銀行密碼，屬於安全正常訊息。"
                 else:
-                    safe_evidence = f"經 165 AI 鑑識比對，訊息中之連結 ({orig_u}) 屬於台灣官方電信/電商合法白名單網域，內容為正常會員促銷與活動通知，未出現要求匯款或竊取個資特徵，屬於日常安全內容。"
+                    safe_evidence = f"經 165 AI 鑑識比對，訊息中之連結 ({orig_u}) 屬於台灣合法註冊之官方企業/金融人壽/電信電商白名單網域（如 .com.tw / .gov.tw 等官方網站），內容為正常保戶服務、表單下載或會員通知，未出現要求匯款或竊取個資特徵，屬於日常安全內容。"
             else:
                 safe_evidence = "經 165 AI 鑑識比對，此內容未出現釣魚連結、非官方網址、要求匯款轉帳、恐嚇凍結、規避行員提問或假投資等惡意破綻特徵，屬於日常安全內容。"
 
