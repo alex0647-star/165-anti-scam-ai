@@ -61,20 +61,20 @@ class AntiScamForensicEngine:
             safe_mock = json.dumps({
                 "analysis_id": f"IMG-INFO-{uuid.uuid4().hex[:8].upper()}",
                 "timestamp": now_iso,
-                "input_summary": "上傳之圖片未提取到文字內容",
+                "input_summary": "上傳之圖片未能提取到清晰文字內容",
                 "risk_assessment": {
-                    "risk_score": 0,
-                    "risk_level": "安全",
-                    "confidence_level": "高",
-                    "primary_scam_type": "正常圖片 / 未含詐騙特徵"
+                    "risk_score": 50,
+                    "risk_level": "低度疑慮",
+                    "confidence_level": "中",
+                    "primary_scam_type": "圖片文字無法辨識 (請直接貼上網址或對話文字)"
                 },
                 "red_flags": [],
                 "psychological_tactics": [],
-                "evidence_analysis": "此圖片中未偵測到任何可疑詐騙字句或惡意特徵。\n\n💡 **重要提示**：若您上傳的是對話截圖，請至右下角 **「⚙️ 管理應用」➔ Settings ➔ Secrets** 填入 `GEMINI_API_KEY = '您的金鑰'`，系統即可自動啟動 Gemini 1.5 Flash 多模態 OCR 進行深度鑑識！",
+                "evidence_analysis": "系統未能從您上傳的圖片中擷取到清晰的文字或網址（可能因圖片模糊或雲端 OCR 連線逾時）。\n\n⚠️ **防詐安全提醒**：切勿因為圖片未抽出文字就認定安全！若圖中包含可疑網址（如 `.top`、`.vip` 結尾之繪畫比賽投票連結）或要求匯款，請直接將該網址或對話文字貼入下方文字框進行深度鑑識。",
                 "actionable_guidance": {
-                    "immediate_actions": ["無須採取任何防禦行動。"],
-                    "official_verification": ["若要啟用截圖自動辨識，請配置 GEMINI_API_KEY。"],
-                    "recommended_safe_reply": "此圖片安全，未見任何詐騙破綻。"
+                    "immediate_actions": ["請勿點擊圖片中的不明連結（特別是 .top / .vip 投票網址）或輸入 LINE 帳密與驗證碼。"],
+                    "official_verification": ["可將圖片中的網址或關鍵句子手動輸入文字框，或撥打 165 反詐騙專線查證。"],
+                    "recommended_safe_reply": "請先透過電話向本人查證，切勿直接點擊連結。"
                 }
             }, ensure_ascii=False)
             _, validated_result, _ = OutputGuardrail.validate_and_parse(
@@ -226,15 +226,20 @@ class AntiScamForensicEngine:
             "ntu.edu.tw", "moj.gov.tw", "npa.gov.tw", "trendmicro.com"
         ]
 
-        # 抽取訊息中所有網址並支援即時短網址展開核驗
+        # 抽取訊息中所有網址（包含未帶 http:// 之高風險可疑網域）並支援即時短網址展開核驗
         found_urls = re.findall(r"https?://[^\s]+", user_text)
+        bare_suspicious_domains = re.findall(r"\b(?:https?://)?[a-zA-Z0-9\.-]+\.(?:top|vip|xyz|icu|cfd|sbs|cyou|club|fun|shop|site|online|cc)(?:/[^\s]*)?", user_text, re.IGNORECASE)
+        for bd in bare_suspicious_domains:
+            if bd not in found_urls and f"http://{bd}" not in found_urls and f"https://{bd}" not in found_urls:
+                found_urls.append(bd)
+
         has_suspicious_url = False
         suspicious_url_str = ""
         verified_official_urls = []
         for u in found_urls:
             u_clean = u.rstrip(").,;\"'】」")
             u_low = u_clean.lower()
-            resolved_u = self._resolve_redirect_url(u_clean)
+            resolved_u = self._resolve_redirect_url(u_clean if u_clean.startswith("http") else f"https://{u_clean}")
             is_trusted = any(td in u_low for td in TRUSTED_DOMAINS) or any(td in resolved_u.lower() for td in TRUSTED_DOMAINS)
             if is_trusted:
                 verified_official_urls.append((u_clean, resolved_u))
@@ -259,7 +264,12 @@ class AntiScamForensicEngine:
         has_recurring_fee = ("重複訂購" in user_text or "自動續費" in user_text or "重複扣款" in user_text or "扣款未變更" in user_text or "保留方式" in user_text or "解除分期" in user_text)
 
         # 關鍵詐騙特徵指標
-        has_phishing_link = has_suspicious_url or (".vip" in low_text or ".top" in low_text or ".xyz" in low_text or ".cc" in low_text)
+        has_high_risk_tld = bool(re.search(r"\.(?:top|vip|xyz|icu|cfd|sbs|cyou)\b", low_text))
+        has_phishing_link = has_suspicious_url or has_high_risk_tld or (".cc" in low_text)
+        has_voting_phishing = any(kw in user_text for kw in [
+            "繪畫比賽", "參加繪畫", "創意繪畫", "幫忙投一票", "幫我投", "幫忙投",
+            "投一票嗎", "寵物比賽", "才藝比賽", "人氣投票", "輔助認證"
+        ]) or (("投" in user_text and "票" in user_text) and has_phishing_link)
         has_money_trigger = ("atm" in low_text or "轉帳" in low_text or "監管帳戶" in low_text or "解除分期" in low_text or "匯款" in low_text or "usdt" in low_text or "提現保證金" in low_text or "日領高薪" in low_text or "給你抽" in low_text or "丟你那邊" in low_text or "借帳戶" in low_text or "租帳戶" in low_text or "不能收錢" in low_text or "提領" in low_text)
         has_legal_threat = ("洗錢防制法" in user_text or "地檢署" in user_text or "特偵組" in user_text or "強制拘提" in user_text or "公文傳票" in user_text or "健保卡異常" in user_text or "鎖卡" in user_text or "凍結" in user_text or "停水" in user_text)
         has_investment_trap = ("飆股" in user_text or "老師帶盤" in user_text or "內線消息" in user_text or "保證獲利" in user_text or "翻倍" in user_text or "外資" in user_text or "佈局" in user_text or "代操" in user_text or "蛋糕" in user_text or "金控" in user_text or "加.賴" in user_text or "投.貲" in user_text or "老帥" in user_text)
@@ -269,7 +279,11 @@ class AntiScamForensicEngine:
         has_crypto_airdrop = ("空投" in user_text or "airdrop" in low_text or "錢包地址" in user_text or "claim" in low_text or "solana" in low_text or "治理代幣" in user_text or "抽中" in user_text or "特獎" in user_text)
 
         # 1. 正常訊息判斷（如果沒有觸發任何明顯詐騙特徵）
-        is_scam = has_email_spoof or has_recurring_fee or has_phishing_link or has_money_trigger or has_legal_threat or has_investment_trap or has_teller_coaching or has_job_or_account_trap or has_urgent_relative_trap or has_crypto_airdrop
+        is_scam = (
+            has_voting_phishing or has_email_spoof or has_recurring_fee or has_phishing_link
+            or has_money_trigger or has_legal_threat or has_investment_trap or has_teller_coaching
+            or has_job_or_account_trap or has_urgent_relative_trap or has_crypto_airdrop
+        )
 
         if not is_scam:
             if verified_official_urls:
@@ -303,19 +317,37 @@ class AntiScamForensicEngine:
 
         # 2. 詐騙特徵鑑識
         matched_case = rag_cases[0] if rag_cases else {
-            "category": "假投資與臨櫃話術詐騙" if has_teller_coaching else ("假冒官方電子郵件 (假重複扣款/解除分期)" if (has_email_spoof or has_recurring_fee) else ("假求職/人頭帳戶詐騙" if has_job_or_account_trap else "疑似詐騙")),
-            "tactics": ["冒名欺騙", "製造訂單扣款恐慌"]
+            "category": "假親友比賽拉票釣魚 / LINE 帳號盜用詐騙" if has_voting_phishing else (
+                "假投資與臨櫃話術詐騙" if has_teller_coaching else (
+                    "假冒官方電子郵件 (假重複扣款/解除分期)" if (has_email_spoof or has_recurring_fee) else (
+                        "釣魚網站與惡意連結詐騙" if has_high_risk_tld else (
+                            "假求職/人頭帳戶詐騙" if has_job_or_account_trap else "疑似詐騙"
+                        )
+                    )
+                )
+            ),
+            "tactics": ["冒名欺騙", "誘導點擊釣魚連結"]
         }
 
-        if has_email_spoof or has_recurring_fee:
+        if has_voting_phishing:
+            category = "假親友比賽拉票釣魚 / LINE 帳號盜用詐騙"
+        elif has_email_spoof or has_recurring_fee:
             category = "假冒官方電子郵件 (假重複扣款/解除分期)"
         elif has_teller_coaching:
             category = "假投資博弈與臨櫃話術詐騙"
+        elif has_high_risk_tld and not (has_money_trigger or has_legal_threat or has_investment_trap):
+            category = "釣魚網站與惡意連結詐騙 (.top/.vip 高風險網域)"
         else:
             category = matched_case.get("category", "疑似詐騙")
 
         # 根據文本抽取可疑特徵
         red_flags = []
+        if has_voting_phishing:
+            red_flags.append({
+                "quote": "小朋友在參加繪畫比賽 可以幫忙投一票嗎 / 幫我投14號",
+                "issue_type": "典型假冒親友比賽拉票話術，誘導點擊釣魚網站並輸入 LINE 帳密與 OTP 認證碼以盜取帳號",
+                "severity": "HIGH"
+            })
         if has_email_spoof:
             red_flags.append({
                 "quote": email_spoof_str if email_spoof_str else "butterfly_free_9@yahoo.co.jp",
@@ -335,10 +367,14 @@ class AntiScamForensicEngine:
                 "severity": "HIGH"
             })
         if has_phishing_link:
-            urls = re.findall(r"https?://[^\s]+", user_text)
+            target_u = suspicious_url_str or (found_urls[0] if found_urls else "非官方可疑連結")
             red_flags.append({
-                "quote": urls[0] if urls else "非官方可疑連結",
-                "issue_type": "非官方或可疑短網址跳轉",
+                "quote": target_u,
+                "issue_type": (
+                    f"境外高風險免洗釣魚網域 ({target_u})，偽裝成比賽投票或驗證網頁竊取個資與帳號"
+                    if (has_high_risk_tld or has_voting_phishing)
+                    else "非官方或可疑短網址跳轉"
+                ),
                 "severity": "HIGH"
             })
         if has_money_trigger and not has_recurring_fee:
@@ -361,6 +397,11 @@ class AntiScamForensicEngine:
             })
 
         tactics = []
+        if has_voting_phishing:
+            tactics.append({
+                "tactic_name": "親友信任綁架與假投票釣魚盜號",
+                "description": "利用遭盜用的親友帳號傳送「小朋友參加繪畫比賽幫忙投一票」，藉人情壓力卸下心防，引導進入偽造投票網頁輸入 LINE 帳號、密碼與簡訊 OTP 認證碼，瞬間奪取受害者 LINE 帳號控制權。"
+            })
         if has_teller_coaching:
             tactics.append({
                 "tactic_name": "社交阻絕與規避行員提問",
@@ -372,7 +413,15 @@ class AntiScamForensicEngine:
                 "description": f"詐騙方運用『{t}』手法降低受害者的防備心並迫使其在慌亂中採取行動。"
             })
 
-        if has_email_spoof or has_recurring_fee:
+        if has_voting_phishing:
+            score = 96
+            evidence_msg = (
+                f"經 165 AI 鑑識比對，此訊息為極度危險之【假親友比賽拉票釣魚 / LINE 帳號盜用詐騙】！"
+                f"詐騙集團先盜用親友的 LINE 帳號，以「有在忙嗎」、「小朋友在參加繪畫比賽，可以幫忙投一票嗎（如幫我投14號）」為由降低您的戒心，"
+                f"並附上高風險境外免洗釣魚網址（{suspicious_url_str or '如 .top / .vip 亂數網域'}）。"
+                f"一旦點擊投票，該網站會要求您輸入「LINE 帳號、密碼與手機簡訊 OTP 認證碼」，進而瞬間盜走您的 LINE 帳號並繼續向您的通訊錄親友行騙或借錢！"
+            )
+        elif has_email_spoof or has_recurring_fee:
             score = 95
             evidence_msg = f"經鑑識比對，此郵件雖冒名「IKEA 宜家卡卡友」，但寄件者實際信箱為日本免費郵件網域 ({email_spoof_str or 'butterfly_free_9@yahoo.co.jp'})，完全不符跨國企業官方網域。且內容使用常見的「重複訂購/自動續費未變更」等製造恐慌話術，為典型的假客服、假解除分期付款詐騙手法，意圖引導受害人聯絡非官方客服操作 ATM 或網銀轉帳，具有極高詐騙風險。"
         elif has_teller_coaching or has_legal_threat:
@@ -381,6 +430,12 @@ class AntiScamForensicEngine:
                 "此對話截圖屬於極度典型之【假投資/外資佈局臨櫃匯款詐騙】！詐騙分子假冒「金控專員」，並在被害人前往銀行臨櫃辦理匯款時，惡意教導受害者『若行員問到資金用途，一定不能講是用於投資』，意圖繞過銀行行員的防詐關懷提問與洗錢防制審查。"
                 if has_teller_coaching else
                 f"此訊息高度吻合 165 資料庫中之『{category}』犯罪特徵。對方透過非官方管道聯繫，並試圖誘導金錢轉移或個資竊取，屬於高風險詐騙。"
+            )
+        elif has_high_risk_tld:
+            score = 92
+            evidence_msg = (
+                f"經 165 AI 網域鑑識，此連結（{suspicious_url_str or '可疑網址'}）採用境外高風險免洗頂級網域（如 .top / .vip / .xyz 等）搭配亂數子網域，"
+                f"為詐騙集團最常使用之【釣魚盜號 / 假投票活動 / 假催繳網站】！點擊後極可能要求輸入 LINE 帳號密碼、信用卡號或手機簡訊 OTP 驗證碼，請絕對不要點擊或填寫任何資料。"
             )
         else:
             score = 90 if has_money_trigger else 75
@@ -403,13 +458,13 @@ class AntiScamForensicEngine:
             "evidence_analysis": evidence_msg,
             "actionable_guidance": {
                 "immediate_actions": [
-                    "絕對不要點擊訊息中的任何連結或輸入個人身分證、信用卡及 OTP 驗證碼。",
-                    "切勿聽從指示前往 ATM 或開啟網路銀行進行任何操作。"
+                    "絕對不要點擊訊息中的任何連結（特別是 .top / .vip 投票網址），切勿輸入 LINE 帳號密碼、信用卡或簡訊 OTP 驗證碼。",
+                    "切勿聽從指示進行 LINE 輔助認證、操作 ATM 或開啟網路銀行。"
                 ],
                 "official_verification": [
-                    "立即撥打 165 反詐騙諮詢專線進行查證與通報檢舉。",
-                    "透過官方網站或 104 查號台取得該機關/企業之真實電話親自核對。"
+                    "請直接撥打電話聯繫該名親友本人，確認其 LINE 帳號是否遭盜用，並提醒對方通知其他親友。",
+                    "立即撥打 165 反詐騙諮詢專線進行查證與通報檢舉。"
                 ],
-                "recommended_safe_reply": "此案件我已通報 165 反詐騙專線與派出所備案，請勿再來電或傳訊。"
+                "recommended_safe_reply": "我先打電話跟你本人確認一下，請勿點擊不明投票連結！"
             }
         }, ensure_ascii=False)

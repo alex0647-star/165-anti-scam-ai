@@ -12,6 +12,7 @@ import hmac
 import hashlib
 import base64
 import json
+import tempfile
 import requests
 from fastapi import FastAPI, Request, HTTPException, Header
 import uvicorn
@@ -114,6 +115,19 @@ def reply_line_message(reply_token: str, text: str):
         print(f"❌ [LINE Reply Error] 發送回覆失敗: {e}")
 
 
+def download_line_image(message_id: str) -> str:
+    """從 LINE Messaging API 下載使用者傳送的截圖圖片並存為暫存檔"""
+    token = get_clean_env("LINE_CHANNEL_ACCESS_TOKEN", LINE_CHANNEL_ACCESS_TOKEN)
+    url = f"https://api-data.line.me/v2/bot/message/{message_id}/content"
+    headers = {"Authorization": f"Bearer {token}"}
+    resp = requests.get(url, headers=headers, timeout=15)
+    resp.raise_for_status()
+    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+    tmp_file.write(resp.content)
+    tmp_file.close()
+    return tmp_file.name
+
+
 @app.get("/")
 async def health_check():
     return {"status": "running", "service": "165 AI Anti-Scam LINE Bot Server"}
@@ -172,6 +186,27 @@ async def line_webhook(request: Request, x_line_signature: str = Header(None)):
                     except Exception as e:
                         print(f"❌ [AI Engine Error] 鑑識失敗: {e}")
                         reply_line_message(reply_token, "⚠️ 抱歉，AI 防詐系統鑑識時發生短暫異常，請稍後再次嘗試。")
+
+            elif msg_type == "image":
+                msg_id = msg.get("id", "")
+                if msg_id:
+                    tmp_path = ""
+                    try:
+                        print(f"🖼️ [收到 LINE 圖片] Message ID: {msg_id}，啟動多模態截圖 OCR 鑑識...")
+                        tmp_path = download_line_image(msg_id)
+                        payload = InputPayload(image_path=tmp_path)
+                        result = engine.analyze(payload)
+                        reply_content = format_line_response(result)
+                        reply_line_message(reply_token, reply_content)
+                    except Exception as e:
+                        print(f"❌ [LINE Image Analysis Error] 圖片鑑識失敗: {e}")
+                        reply_line_message(reply_token, "⚠️ 抱歉，截圖辨識時發生短暫連線異常，請直接將截圖中的網址或對話文字複製貼上，系統將立即為您鑑識！")
+                    finally:
+                        if tmp_path and os.path.exists(tmp_path):
+                            try:
+                                os.remove(tmp_path)
+                            except Exception:
+                                pass
 
     return {"status": "ok"}
 

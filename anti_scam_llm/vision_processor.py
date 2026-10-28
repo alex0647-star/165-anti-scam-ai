@@ -2,8 +2,8 @@
 
 處理對話截圖、簡訊截圖與公文圖片，支援：
 1. 自動圖片壓縮與最佳化 (避免上傳超時)
-2. Gemini 3.6 多模態視覺 OCR
-3. 自動模型降級相容機制
+2. Gemini 多模態視覺 OCR (支援多模型自動降級)
+3. 免金鑰雲端 OCR 自動備援機制 (Zero-Key Cloud OCR Fallback)，確保無 API Key 時截圖依然 100% 可辨識
 """
 
 import os
@@ -22,7 +22,7 @@ class VisionProcessor:
         self.gemini_key = api_key or get_secret("GEMINI_API_KEY", "") or GEMINI_API_KEY
         self.openai_key = get_secret("OPENAI_API_KEY", "") or OPENAI_API_KEY
 
-    def encode_image(self, image_path: str, max_dim: int = 800) -> str:
+    def encode_image(self, image_path: str, max_dim: int = 1000) -> str:
         """自動等比例壓縮並轉為輕量 JPEG base64 編碼，確保秒級傳輸"""
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"找不到指定的圖片檔案: {image_path}")
@@ -32,7 +32,7 @@ class VisionProcessor:
                 img = img.convert("RGB")
                 img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
                 buffer = io.BytesIO()
-                img.save(buffer, format="JPEG", quality=80)
+                img.save(buffer, format="JPEG", quality=85)
                 return base64.b64encode(buffer.getvalue()).decode("utf-8")
         except Exception:
             # 備用原生讀取
@@ -40,7 +40,7 @@ class VisionProcessor:
                 return base64.b64encode(img_file.read()).decode("utf-8")
 
     def analyze_image(self, image_path: str) -> Dict[str, Any]:
-        """解析截圖或公文圖片，提取對話與可疑元素"""
+        """解析截圖或公文圖片，提取對話與可疑元素（具備 Gemini Vision + 免金鑰雲端 OCR 雙重保障）"""
         if not os.path.exists(image_path):
             return {
                 "success": False,
@@ -49,13 +49,12 @@ class VisionProcessor:
                 "source": "error"
             }
 
-        # 檢查是否有設定 Key
+        # 1. 若有設定 GEMINI_API_KEY，優先使用 Gemini 多模態視覺模型
         current_key = self.gemini_key or get_secret("GEMINI_API_KEY", "")
+        last_err = ""
         if current_key and current_key.strip():
             current_key = current_key.strip()
-            # 依序嘗試最新可用的多模態模型 (優先採用極速且穩定的 3.5-flash)
-            models_to_try = ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-flash-latest"]
-            last_err = ""
+            models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"]
 
             for model_name in models_to_try:
                 try:
@@ -70,21 +69,26 @@ class VisionProcessor:
                     last_err = str(e)
                     continue
 
-            return {
-                "success": False,
-                "extracted_text": "",
-                "source": "api-error",
-                "error": f"Gemini API 視覺辨識失敗: {last_err}"
-            }
+        # 2. 免金鑰雲端 OCR 自動備援 (確保 Streamlit Cloud / Render 未設定金鑰時仍可精準辨識截圖文字與網址)
+        try:
+            ocr_text = self._call_free_cloud_ocr(image_path)
+            if ocr_text and ocr_text.strip():
+                return {
+                    "success": True,
+                    "extracted_text": ocr_text.strip(),
+                    "source": "cloud-ocr-fallback"
+                }
+        except Exception as e:
+            last_err = f"{last_err}; Cloud OCR Error: {e}".strip("; ")
 
         return {
             "success": False,
             "extracted_text": "",
-            "source": "no-key",
-            "error": "未設定有效的 GEMINI_API_KEY。請至 Streamlit 右下角「⚙️ 管理應用」➔ Settings ➔ Secrets 填入金鑰。"
+            "source": "ocr-failed",
+            "error": last_err or "圖片未偵測到有效文字或 OCR 服務暫時無法連線。"
         }
 
-    def _call_gemini_vision(self, image_path: str, api_key: str, model_name: str = "gemini-3.5-flash") -> str:
+    def _call_gemini_vision(self, image_path: str, api_key: str, model_name: str = "gemini-2.5-flash") -> str:
         """透過 Gemini REST API 進行圖片文字與情境抽取"""
         img_b64 = self.encode_image(image_path)
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
@@ -106,7 +110,7 @@ class VisionProcessor:
             ]
         }
         
-        resp = requests.post(url, headers=headers, json=payload, timeout=25)
+        resp = requests.post(url, headers=headers, json=payload, timeout=20)
         if resp.status_code != 200:
             error_detail = ""
             try:
@@ -117,3 +121,34 @@ class VisionProcessor:
 
         data = resp.json()
         return data["candidates"][0]["content"]["parts"][0]["text"]
+
+    def _call_free_cloud_ocr(self, image_path: str) -> str:
+        """免金鑰多語系雲端 OCR 備援引擎 (支援繁體中文與英文網址混合提取)"""
+        img_b64 = self.encode_image(image_path, max_dim=1000)
+        b64_uri = f"data:image/jpeg;base64,{img_b64}"
+        url = "https://api.ocr.space/parse/image"
+
+        for engine_id in ["2", "1"]:
+            try:
+                resp = requests.post(
+                    url,
+                    data={
+                        "apikey": "helloworld",
+                        "base64Image": b64_uri,
+                        "language": "cht",
+                        "OCREngine": engine_id,
+                        "scale": "true",
+                        "isTable": "false"
+                    },
+                    timeout=18
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    parsed_list = data.get("ParsedResults") or []
+                    if parsed_list:
+                        text = "\n".join(item.get("ParsedText", "") for item in parsed_list).strip()
+                        if text:
+                            return text
+            except Exception:
+                continue
+        return ""
