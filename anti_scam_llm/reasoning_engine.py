@@ -196,8 +196,11 @@ class AntiScamForensicEngine:
         """自動縫合手機截圖 OCR 因窄螢幕換行而斷裂的網址（含 https:// 與無協定之裸網域如 bsms.tw/\\noCW9Bo 或 https://twm5g.my/\\nQM4J09XDK9）"""
         if not text:
             return ""
-        stitched = re.sub(r"(https?://)\s*[\r\n]+\s*([a-zA-Z0-9])", r"\1\2", text)
-        stitched = re.sub(r"((?:https?://)?[a-zA-Z0-9._-]+\.[a-zA-Z]{2,}/)\s*[\r\n]+\s*([a-zA-Z0-9_-]{2,})", r"\1\2", stitched)
+        # 1. 縫合 https:// 後方換行、空白或 OCR 雜訊點號斷裂之網域
+        stitched = re.sub(r"(https?://?)[.,;:'\"`()\s•·。，]*[\r\n]+\s*([a-zA-Z0-9])", r"https://\2", text)
+        stitched = re.sub(r"(https?://)\s+([a-zA-Z0-9][a-zA-Z0-9._-]*\.[a-zA-Z]{2,})", r"\1\2", stitched)
+        # 2. 縫合網域斜線 / 後方換行斷裂之路徑
+        stitched = re.sub(r"((?:https?://)?[a-zA-Z0-9._-]+\.[a-zA-Z]{2,}/)[.,;:'\"`()\s•·。，]*[\r\n]+\s*([a-zA-Z0-9_-]{2,})", r"\1\2", stitched)
         return stitched
 
     def _resolve_redirect_url(self, short_url: str) -> str:
@@ -298,18 +301,21 @@ class AntiScamForensicEngine:
             # 1. 台灣 TWNIC 合法註冊之企業/政府/學校/法人網域
             if host.endswith((".com.tw", ".gov.tw", ".edu.tw", ".org.tw", ".net.tw", ".mil.tw", ".gov.taipei", ".metro.taipei")):
                 return True
-            # 2. 比對 180+ 常見官方白名單網域 (精確匹配主網域或子網域)
+            # 2. 比對 185+ 常見官方白名單網域 (精確匹配主網域或子網域)
             return any(host == td or host.endswith("." + td) for td in TRUSTED_DOMAINS)
 
-        # 抽取訊息中所有網址（包含未帶 http:// 之短網址如 t.ly/mvdis.gov.tw 與高風險可疑網域）並支援即時短網址展開核驗
-        found_urls = re.findall(r"https?://[^\s]+", user_text)
+        # 抽取訊息中所有完整網址（必須包含有效網域結構，避免 OCR 斷行殘留之孤立 https:// 被誤判為可疑網址）
+        found_urls = re.findall(
+            r"https?://[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+(?:/[a-zA-Z0-9._~:/?#\[\]@!$&'()*+,;=%-]*)?",
+            user_text
+        )
         bare_url_candidates = re.findall(
-            r"(?<![@\w])(?:https?://)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.(?:top|vip|xyz|icu|cfd|sbs|cyou|club|fun|shop|site|online|cc|ly|gl|gd|gy|is|at|id|me|tw|co|com|net|org)(?:/[^\s]*)?",
+            r"(?<![@\w])(?:https?://)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.(?:top|vip|xyz|icu|cfd|sbs|cyou|club|fun|shop|site|online|cc|ly|gl|gd|gy|is|at|id|me|my|tw|co|com|net|org)(?:/[a-zA-Z0-9._~:/?#\[\]@!$&'()*+,;=%-]*)?",
             user_text,
             re.IGNORECASE
         )
         for bd in bare_url_candidates:
-            bd_clean = bd.rstrip(").,;\"'】」")
+            bd_clean = bd.rstrip(").,;:\"'】」。，！？、；：•·")
             # 若無 http 前綴且無斜線路徑，僅納入常見短網址或高風險後綴，避免將一般品牌英文縮寫誤判為網址
             if not bd_clean.lower().startswith("http") and "/" not in bd_clean:
                 if not re.search(r"\.(?:top|vip|xyz|icu|cfd|sbs|cyou|club|fun|shop|site|online|cc|ly|tw|edu\.tw|gov\.tw|com\.tw)$", bd_clean.lower()):
@@ -322,13 +328,17 @@ class AntiScamForensicEngine:
         has_path_spoofing = False
         verified_official_urls = []
         for u in found_urls:
-            u_clean = u.rstrip(").,;\"'】」")
+            u_clean = u.rstrip(").,;:\"'】」。，！？、；：•·")
             u_low = u_clean.lower()
             # 擷取斜線前的真實主網域 (Hostname) 與斜線後的路徑 (Path)
             u_no_proto = re.sub(r"^https?://", "", u_low)
             parts = u_no_proto.split("/", 1)
-            host_only = parts[0]
+            host_only = parts[0].strip()
             path_only = "/" + parts[1] if len(parts) > 1 else ""
+
+            # 略過 OCR 殘留之不完整協定片段 (如單獨的 https:// 無有效網域)
+            if not re.match(r"^[a-z0-9-]+(?:\.[a-z0-9-]+)+$", host_only):
+                continue
 
             # 檢測「短網址斜線路徑偽裝手法」(例如 t.ly/mvdis.gov.tw，真實主網域為 t.ly，卻在斜線後偽造 mvdis.gov.tw)
             if not host_only.endswith(".gov.tw") and any(k in path_only for k in ["gov.tw", "mvdis", "taipower", "water", "post", "fetc"]):
