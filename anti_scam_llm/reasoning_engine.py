@@ -84,10 +84,11 @@ class AntiScamForensicEngine:
             )
             return validated_result
 
-        # 2. RAG 知識庫檢索
+        # 2. RAG 知識庫檢索 (先自動縫合 OCR 因窄螢幕換行而斷裂之網址，如 https://twm5g.my/\nQM4J09XDK9)
+        user_text = self._stitch_multiline_urls(user_text)
         rag_cases = self.retriever.retrieve(user_text, top_k=2)
 
-        # 2.5 即時短網址展開核驗 (提供給 LLM 與離線引擎雙重參考)
+        # 2.5 即時短網址展開核驗 (提供給 LLM 與離線引擎雙重參考，支援 HTTP 301/302 與 HTML Meta Refresh 跳轉)
         url_inspection_notes = []
         for u in re.findall(r"https?://[^\s]+", user_text):
             u_clean = u.rstrip(").,;\"'】」")
@@ -136,7 +137,7 @@ class AntiScamForensicEngine:
 
     def _call_gemini_api(self, prompt: str) -> str:
         """調用 Google Gemini REST API (具備多模型自動降級與重試)"""
-        candidate_models = [self.model_name, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"]
+        candidate_models = [self.model_name, "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-2.5-flash"]
         models_to_try = []
         for m in candidate_models:
             if m and m not in models_to_try:
@@ -190,17 +191,30 @@ class AntiScamForensicEngine:
         data = resp.json()
         return data["choices"][0]["message"]["content"]
 
+    @staticmethod
+    def _stitch_multiline_urls(text: str) -> str:
+        """自動縫合手機截圖 OCR 因窄螢幕換行而斷裂的網址（如 https://\\ntwm5g.co/idn3 或 https://twm5g.my/\\nQM4J09XDK9）"""
+        if not text:
+            return ""
+        stitched = re.sub(r"(https?://)\s*\r?\n\s*([a-zA-Z0-9])", r"\1\2", text)
+        stitched = re.sub(r"(https?://[a-zA-Z0-9._-]+/)\s*\r?\n\s*([a-zA-Z0-9_-]{2,})", r"\1\2", stitched)
+        return stitched
+
     def _resolve_redirect_url(self, short_url: str) -> str:
-        """即時追蹤短網址轉址目標，確認最終真實網域"""
+        """即時追蹤短網址轉址目標（支援 HTTP 301/302 重新導向與 HTML Meta Refresh 跳轉，如 twm5g.my ➔ myfone.com.tw）"""
         try:
             resp = requests.get(
                 short_url,
                 allow_redirects=True,
                 timeout=3.5,
-                stream=True,
                 headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
             )
             final_url = resp.url or short_url
+            if final_url.rstrip("/") == short_url.rstrip("/") and resp.status_code == 200:
+                html_head = resp.text[:4096]
+                meta_m = re.search(r'content=["\'][^"\']*url\s*=\s*([^"\'\s>]+)', html_head, re.IGNORECASE)
+                if meta_m:
+                    final_url = meta_m.group(1).replace("&amp;", "&").strip()
             resp.close()
             return final_url
         except Exception:
@@ -208,6 +222,7 @@ class AntiScamForensicEngine:
 
     def _intelligent_offline_inference(self, user_text: str, rag_cases: list) -> str:
         """智慧離線推論引擎：依據 RAG 檢索特徵與關鍵詞規則進行精準鑑識"""
+        user_text = self._stitch_multiline_urls(user_text)
         low_text = user_text.lower()
         now_iso = datetime.now(timezone.utc).isoformat()
         
@@ -232,9 +247,9 @@ class AntiScamForensicEngine:
             "firstlife.com.tw", "tcb-life.com.tw", "allianz.com.tw", "allianz.com", "pcalife.com.tw",
             "prudential.com.tw", "aia.com.tw", "aia.com", "chubb.com", "chubblife.com.tw",
             "cigna.com.tw", "hontai.com.tw", "msig-mingtai.com.tw", "tmnewa.com.tw", "hotains.com.tw", "cki.com.tw",
-            # 4. 電信業者與官方專屬短網址
+            # 4. 電信業者與官方專屬短網址 (含台灣大哥大 twm5g.co / twm5g.my / myfone 商城)
             "cht.com.tw", "cht.tw", "emome.net", "hinet.net",
-            "taiwanmobile.com", "twm5g.co", "twm.tw", "oppay.tw", "myfone.com.tw", "myvideo.net.tw",
+            "taiwanmobile.com", "twm5g.co", "twm5g.my", "twm5g.com", "twm.tw", "oppay.tw", "myfone.com.tw", "myfone.tw", "myvideo.net.tw",
             "fetnet.net", "fet.tw", "friday.tw", "tstartel.com",
             # 5. 電商購物、超商量販、百貨與行動支付
             "shopee.tw", "sho.pe", "shp.ee", "momoshop.com.tw", "momo.dm", "momo.com.tw",
