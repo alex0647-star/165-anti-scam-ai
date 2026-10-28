@@ -177,17 +177,18 @@ def check_165_official_line_id(line_id: str) -> Optional[Dict[str, Any]]:
             data = resp.json()
             if isinstance(data, list) and len(data) > 0:
                 first_hit = data[0]
+                alert_dt = first_hit.get("alertTime", "近期")
+                t_code = first_hit.get("type", "Y1")
                 return {
                     "is_reported_scam": True,
                     "line_id": first_hit.get("lineId", clean_id),
-                    "alert_time": first_hit.get("alertTime", "近期"),
+                    "alert_time": alert_dt,
+                    "alert_date": alert_dt,
+                    "type_code": t_code,
+                    "category": "假投資 / 假交友引流涉詐 LINE 帳號",
                     "source": "內政部警政署 165 全民防騙網官方資料庫 (165.npa.gov.tw)"
                 }
-            return {
-                "is_reported_scam": False,
-                "line_id": clean_id,
-                "source": "內政部警政署 165 全民防騙網官方資料庫 (165.npa.gov.tw)"
-            }
+            return None
     except Exception:
         pass
     return None
@@ -207,6 +208,8 @@ def sync_from_165_official_api(max_items: int = 8) -> Dict[str, Any]:
     }
     synced_articles = []
     daily_ad_reports = []
+    total_official_articles = 0
+    newly_added_count = 0
     error_msg = ""
 
     # 1. 抓取 165 最新反詐新聞與手法公告 (list/1)
@@ -215,6 +218,7 @@ def sync_from_165_official_api(max_items: int = 8) -> Dict[str, Any]:
         if r_list.status_code == 200:
             items = r_list.json()
             if isinstance(items, list):
+                total_official_articles = len(items)
                 for item in items[:max_items]:
                     art_id = item.get("id")
                     title = (item.get("title") or "").strip()
@@ -244,6 +248,7 @@ def sync_from_165_official_api(max_items: int = 8) -> Dict[str, Any]:
                     if not kw_list:
                         kw_list = [title[:6]]
 
+                    source_url = f"https://165.npa.gov.tw/#/article/1/{art_id}" if art_id else "https://165.npa.gov.tw/#/articles/1"
                     kb_entry = {
                         "id": f"165-LIVE-{art_id}",
                         "category": f"【165官網同步】{title}",
@@ -251,7 +256,8 @@ def sync_from_165_official_api(max_items: int = 8) -> Dict[str, Any]:
                         "summary": content_summary,
                         "keywords": kw_list,
                         "tactics": ["165官方最新通報態樣", "時事與社交工程誘餌"],
-                        "solution": "此為內政部警政署 165 全民防騙網 (https://165.npa.gov.tw) 發布之最新防詐示警，切勿點擊不明連結或依指示匯款，請立即撥打 165 查證。"
+                        "solution": "此為內政部警政署 165 全民防騙網 (https://165.npa.gov.tw) 發布之最新防詐示警，切勿點擊不明連結或依指示匯款，請立即撥打 165 查證。",
+                        "source_url": source_url,
                     }
                     synced_articles.append(kb_entry)
 
@@ -259,6 +265,7 @@ def sync_from_165_official_api(max_items: int = 8) -> Dict[str, Any]:
                     existing_ids = {e.get("id") for e in KNOWLEDGE_BASE_ENTRIES}
                     if kb_entry["id"] not in existing_ids:
                         KNOWLEDGE_BASE_ENTRIES.append(kb_entry)
+                        newly_added_count += 1
     except Exception as e:
         error_msg = str(e)
 
@@ -269,19 +276,26 @@ def sync_from_165_official_api(max_items: int = 8) -> Dict[str, Any]:
             ad_items = r_ads.json()
             if isinstance(ad_items, list):
                 for ad in ad_items[:5]:
+                    ad_id = ad.get("id")
+                    pub_dt = (ad.get("publishDate") or "")[:16].replace("T", " ")
                     daily_ad_reports.append({
-                        "id": ad.get("id"),
+                        "id": ad_id,
                         "title": ad.get("title", ""),
-                        "publish_date": (ad.get("publishDate") or "")[:16].replace("T", " ")
+                        "publish_date": pub_dt,
+                        "publishDate": pub_dt,
+                        "url": f"https://165.npa.gov.tw/#/article/9/{ad_id}" if ad_id else "https://165.npa.gov.tw/#/articles/9",
                     })
     except Exception:
         pass
 
     return {
         "success": len(synced_articles) > 0 or len(daily_ad_reports) > 0,
+        "total_official_articles": total_official_articles,
+        "newly_added_count": newly_added_count,
         "synced_count": len(synced_articles),
         "synced_articles": synced_articles,
         "daily_ad_reports": daily_ad_reports,
+        "latest_reported_ads": daily_ad_reports,
         "total_kb_count": len(KNOWLEDGE_BASE_ENTRIES),
         "error": error_msg
     }
