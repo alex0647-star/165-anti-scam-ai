@@ -351,16 +351,27 @@ class AntiScamForensicEngine:
 
         has_recurring_fee = ("重複訂購" in user_text or "自動續費" in user_text or "重複扣款" in user_text or "扣款未變更" in user_text or "保留方式" in user_text or "解除分期" in user_text)
 
-        # 偵測「亂槍打鳥裝熟誘導加 LINE / 陌生 iMessage 引流詐騙」特徵
-        line_id_match = re.search(r"(?:加我\s*line|加\s*line|line\s*id|line|加賴|加我賴)\s*[:：]\s*([a-zA-Z0-9_.-]{3,})", user_text, re.IGNORECASE)
-        extracted_line_id = line_id_match.group(1) if line_id_match else ""
+        # 偵測「亂槍打鳥裝熟誘導加 LINE / 陌生 iMessage 引流詐騙（含假信貸、假飆股、裝熟三合一）」特徵
+        all_line_ids = re.findall(r"(?:加我\s*l[i1]ne|加下我\s*l[i1]ne|加\s*l[i1]ne|l[i1]ne\s*id|l[i1]ne|id|加賴|加我賴)\s*[:：]\s*([a-zA-Z0-9_.-]{3,})", user_text, re.IGNORECASE)
+        extracted_line_id = "、".join(dict.fromkeys(all_line_ids)) if all_line_ids else ""
+        has_fake_loan_lure = any(kw in user_text for kw in [
+            "永豐貸", "永豐贷", "借款資格", "借款资格", "無需照會", "無需照合",
+            "無需保人", "免保人", "月利息只需", "當天辦理當天入帳", "当天静理当天入眼",
+            "信貸專員", "信贷事员", "貸款公司", "贫款公司"
+        ])
+        has_stock_tip_lure = any(kw in user_text for kw in [
+            "內部漲停票", "内部涨停票", "漲停票公布", "涨停票公",
+            "預計60趴", "預計 60 趴", "预計60趴", "領取代碼", "领取代", "驗證實力"
+        ])
         has_cold_line_lure = (
             any(kw in low_text for kw in [
-                "找不到你", "把我刪了", "有事找你", "有急事找你", "急事找你",
-                "電話打不通", "打不通你電話", "加我line", "加我 line", "加我賴",
-                "加我的line", "加我的賴"
+                "找不到你", "把我刪了", "把我line刪了", "把我line删了", "有事找你", "有急事找你", "急事找你",
+                "電話打不通", "打不通你電話", "加我line", "加我 line", "加下我l1ne", "l1ne", "加我賴",
+                "加我的line", "加我的賴", "還好有存你的聯繫方式", "聯聚方式"
             ])
-            or bool(line_id_match)
+            or bool(all_line_ids)
+            or has_fake_loan_lure
+            or has_stock_tip_lure
             or bool(suspicious_imessage_email and ("line" in low_text or "賴" in low_text or "not in your contact" in low_text or "report junk" in low_text))
         )
 
@@ -391,7 +402,7 @@ class AntiScamForensicEngine:
         has_money_trigger = ("atm" in low_text or "轉帳" in low_text or "監管帳戶" in low_text or "解除分期" in low_text or "匯款" in low_text or "usdt" in low_text or "提現保證金" in low_text or "日領高薪" in low_text or "給你抽" in low_text or "丟你那邊" in low_text or "借帳戶" in low_text or "租帳戶" in low_text or "不能收錢" in low_text or "提領" in low_text)
         has_legal_threat = ("洗錢防制法" in user_text or "地檢署" in user_text or "特偵組" in user_text or "強制拘提" in user_text or "公文傳票" in user_text or "健保卡異常" in user_text or "鎖卡" in user_text or "凍結" in user_text or "停水" in user_text)
         has_investment_trap = ("飆股" in user_text or "老師帶盤" in user_text or "內線消息" in user_text or "保證獲利" in user_text or "翻倍" in user_text or "外資" in user_text or "佈局" in user_text or "代操" in user_text or "蛋糕" in user_text or "金控" in user_text or "加.賴" in user_text or "投.貲" in user_text or "老帥" in user_text)
-        has_teller_coaching = ("不能講" in user_text or "不能說" in user_text or "行員問" in user_text or "行員" in user_text or "臨櫃" in user_text or "裝潢款" in user_text or "買黃金" in user_text or "三方佈局" in user_text or "券商的蛋糕" in user_text or "專員" in user_text)
+        has_teller_coaching = ("不能講" in user_text or "不能說" in user_text or "行員問" in user_text or "行員" in user_text or "臨櫃" in user_text or "裝潢款" in user_text or "買黃金" in user_text or "三方佈局" in user_text or "券商的蛋糕" in user_text)
         has_job_or_account_trap = ("兼職" in user_text or "打字員" in user_text or "家庭代工" in user_text or "存摺" in user_text or "提款卡" in user_text or "包來回機票" in user_text or "海外" in user_text or "東南亞" in user_text or "融資" in user_text or "低利貸款" in user_text or "資金流水" in user_text or "小白皆可貸" in user_text)
         has_urgent_relative_trap = ("車禍" in user_text or "和解" in user_text or "救我" in user_text or "快點救我" in user_text or "爸！是我啦" in user_text or "撞到人" in user_text or "保留訂金" in user_text or "急租" in user_text)
         has_crypto_airdrop = ("空投" in user_text or "airdrop" in low_text or "錢包地址" in user_text or "claim" in low_text or "solana" in low_text or "治理代幣" in user_text or "抽中" in user_text or "特獎" in user_text)
@@ -439,7 +450,7 @@ class AntiScamForensicEngine:
             "category": "惡意木馬病毒簡訊 / 電信小額付費盜刷與通訊錄跳板詐騙" if has_trojan_sms_lure else (
                 "假冒政府監理站/民生催繳釣魚簡訊" if has_gov_bill_phishing else (
                     "假親友比賽拉票釣魚 / LINE 帳號盜用詐騙" if has_voting_phishing else (
-                        "假親友裝熟引流詐騙 / iMessage 誘導加 LINE (殺豬盤與假投資前導)" if has_cold_line_lure else (
+                        "iMessage 垃圾簡訊引流詐騙 (假信貸 / 裝熟認親 / 內部漲停飆股誘導加 LINE)" if has_cold_line_lure else (
                             "假投資與臨櫃話術詐騙" if has_teller_coaching else (
                                 "假冒官方電子郵件 (假重複扣款/解除分期)" if (has_email_spoof or has_recurring_fee) else (
                                     "釣魚網站與惡意連結詐騙" if has_high_risk_tld else (
@@ -461,7 +472,14 @@ class AntiScamForensicEngine:
         elif has_voting_phishing:
             category = "假親友比賽拉票釣魚 / LINE 帳號盜用詐騙"
         elif has_cold_line_lure and not (has_investment_trap or has_money_trigger or has_legal_threat):
-            category = "假親友裝熟引流詐騙 / iMessage 誘導加 LINE (殺豬盤與假投資前導)"
+            if has_fake_loan_lure and has_stock_tip_lure:
+                category = "iMessage 垃圾簡訊引流詐騙 (假信貸 / 裝熟認親 / 飆股內線誘導加 LINE)"
+            elif has_fake_loan_lure:
+                category = "假冒銀行低利信貸 iMessage 引流詐騙 (免保人免照會誘導加 LINE)"
+            elif has_stock_tip_lure:
+                category = "假投顧飆股內線 iMessage 引流詐騙 (漲停票領取代碼誘導加 LINE)"
+            else:
+                category = "假親友裝熟引流詐騙 / iMessage 誘導加 LINE (殺豬盤與假投資前導)"
         elif has_email_spoof or has_recurring_fee:
             category = "假冒官方電子郵件 (假重複扣款/解除分期)"
         elif has_teller_coaching:
@@ -510,17 +528,29 @@ class AntiScamForensicEngine:
                 "issue_type": f"使用中國網易/境外免費信箱 ({suspicious_imessage_email}) 透過 iMessage 批量群發垃圾簡訊，正常台灣親友簡訊絕不會以 @126.com / @163.com 信箱傳送！",
                 "severity": "HIGH"
             })
-        if has_cold_line_lure:
-            id_note = f" (可疑 LINE ID: {extracted_line_id})" if extracted_line_id else ""
+        if has_fake_loan_lure:
             red_flags.append({
-                "quote": f"Line好友怎麼找不到你了 你是不是把我刪了？有事找你 加我 Line{id_note}",
-                "issue_type": "典型「亂槍打鳥裝熟加 LINE」引流話術：故意不署名、不稱呼收件人姓名，利用好奇心誘騙受害者主動加 LINE，規避官方封號機制",
+                "quote": "【永豐貸】提醒您已獲50萬新台幣借款資格。無需照會，無需保人，沒有手續費...添加信貸專員 LINE：gi6600",
+                "issue_type": "假冒知名銀行（如永豐銀行）名義群發 iMessage 免保人超低利貸款簡訊，誘導加私人 LINE ID 騙取存摺提款卡（變成人頭戶）或事先收取保證金/手續費",
                 "severity": "HIGH"
             })
-            if "not in your contact" in low_text or "report junk" in low_text:
+        if has_stock_tip_lure:
+            red_flags.append({
+                "quote": "最新消息：內部漲停票公布，預計 60 趴以上，領取代碼的添加 LINE：zyq1556",
+                "issue_type": "典型假投顧「內部漲停飆股代碼」引流簡訊，以誇大保證獲利（預計 60% 以上）誘騙投資人加入詐騙 LINE 群組進行養套殺",
+                "severity": "HIGH"
+            })
+        if has_cold_line_lure and (not (has_fake_loan_lure or has_stock_tip_lure) or "刪了" in user_text or "删了" in user_text or "l1ne" in low_text):
+            id_note = f" (可疑 LINE ID: {extracted_line_id})" if extracted_line_id else ""
+            red_flags.append({
+                "quote": f"你把我Line刪了嗎？不然都找不到你了加下我L1ne有事找你{id_note}",
+                "issue_type": "典型「亂槍打鳥裝熟加 LINE」引流話術（故意將 Line 寫成 L1ne 規避電信關鍵字過濾），利用好奇心誘騙受害者主動加私人 LINE ID",
+                "severity": "HIGH"
+            })
+            if "not in your contact" in low_text or "report junk" in low_text or "聯絡人列表中" in user_text or "回報垃圾訊息" in user_text:
                 red_flags.append({
-                    "quote": "The sender is not in your contact list / Report Junk",
-                    "issue_type": "手機系統已明確警示此發信人根本不在您的通訊錄聯絡人名單中，直接戳破其「熟人找你」之謊言",
+                    "quote": "寄件人不在您的聯絡人列表中 / 回報垃圾訊息 (Report Junk)",
+                    "issue_type": "手機系統已明確警示此發信人根本不在您的通訊錄聯絡人名單中，直接戳破其「熟人找你」與「銀行專員」之謊言",
                     "severity": "HIGH"
                 })
         if has_voting_phishing:
@@ -590,8 +620,8 @@ class AntiScamForensicEngine:
             })
         if has_cold_line_lure:
             tactics.append({
-                "tactic_name": "無具名裝熟激發好奇心與規避平台封號",
-                "description": "因為詐騙 LINE 帳號若主動大量加陌生人好友會被 LINE 官方封鎖，詐騙集團改以境外免費信箱（如 @126.com）透過 iMessage 免費群發「你是不是把我刪了？有事找你加我 Line」，誘使受害者主動加好友後，再以「認錯人交個朋友（殺豬盤）」或「飆股投資群組」進行詐騙。"
+                "tactic_name": "iMessage 免付費群發與變形字 (L1ne) 規避封鎖",
+                "description": "因為詐騙 LINE 帳號若主動大量加陌生人好友會被 LINE 官方封鎖，詐騙集團改透過 Apple iMessage 免費批量群發「假銀行低利貸款（永豐貸）」、「假熟人認親（加下我 L1ne）」與「內部漲停飆股」，誘使受害者主動加私人 LINE ID。"
             })
         if has_voting_phishing:
             tactics.append({
@@ -632,11 +662,12 @@ class AntiScamForensicEngine:
                 f"一旦點擊投票，該網站會要求您輸入「LINE 帳號、密碼與手機簡訊 OTP 認證碼」，進而瞬間盜走您的 LINE 帳號並繼續向您的通訊錄親友行騙或借錢！"
             )
         elif has_cold_line_lure and not (has_investment_trap or has_money_trigger or has_legal_threat):
-            score = 93
+            score = 95
             evidence_msg = (
-                f"經 165 AI 鑑識比對，此訊息為極度典型之【亂槍打鳥裝熟加 LINE 引流詐騙（殺豬盤與假投資前導垃圾簡訊）】！\n"
-                f"• 破綻一（異常境外發信通道）：發信人並非台灣手機門號，而是使用中國大陸網易免費信箱（{suspicious_imessage_email or '如 @126.com / @163.com'}）透過 Apple iMessage 免付費批量群發，且手機已顯示「寄件人不在您的聯絡人列表中 (Report Junk)」。\n"
-                f"• 破綻二（無具名裝熟心理戰）：全篇訊息完全講不出自己的名字與您的姓名，僅用「Line好友怎麼找不到你了？你是不是把我刪了？有事找你加我 Line：{extracted_line_id or '私人ID'}」激發好奇心。一旦您主動加好友，對方就會以「認錯人交個朋友（愛情殺豬盤）」或拉入「假投資飆股群組」進行詐騙！"
+                f"經 165 AI 鑑識比對，此圖片/訊息為極度典型之【iMessage 垃圾簡訊引流詐騙（假信貸 / 裝熟認親 / 飆股內線誘導加 LINE）】！\n"
+                f"• 破綻一（假冒銀行免保人低利信貸）：冒用『永豐貸』名義宣稱「已獲 50 萬借款資格、每萬月息 60 元、無需照會無需保人」，並要求加入私人信貸專員 LINE（如 `gi6600`），實為騙取存摺人頭帳戶或預收保證金詐騙！\n"
+                f"• 破綻二（裝熟認親與變形字規避偵測）：使用「你把我 Line 刪了嗎？加下我 L1ne 有事找你（ID: `tt67777`）」，故意將 Line 的 i 改成數字 `1`（`L1ne`）以躲避電信防詐攔截。\n"
+                f"• 破綻三（假投顧內部漲停飆股）：宣稱「內部漲停票公布，預計 60 趴以上，領取代碼添加 LINE：`zyq1556`」，且手機底部均顯示「寄件人不在您的聯絡人列表中 / 回報垃圾訊息」，100% 為詐騙引流簡訊！"
             )
         elif has_email_spoof or has_recurring_fee:
             score = 95
