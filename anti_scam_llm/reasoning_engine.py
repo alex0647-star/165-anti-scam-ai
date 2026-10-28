@@ -284,20 +284,44 @@ class AntiScamForensicEngine:
             # 2. 比對 180+ 常見官方白名單網域 (精確匹配主網域或子網域)
             return any(host == td or host.endswith("." + td) for td in TRUSTED_DOMAINS)
 
-        # 抽取訊息中所有網址（包含未帶 http:// 之高風險可疑網域）並支援即時短網址展開核驗
+        # 抽取訊息中所有網址（包含未帶 http:// 之短網址如 t.ly/mvdis.gov.tw 與高風險可疑網域）並支援即時短網址展開核驗
         found_urls = re.findall(r"https?://[^\s]+", user_text)
-        bare_suspicious_domains = re.findall(r"\b(?:https?://)?[a-zA-Z0-9\.-]+\.(?:top|vip|xyz|icu|cfd|sbs|cyou|club|fun|shop|site|online|cc)(?:/[^\s]*)?", user_text, re.IGNORECASE)
-        for bd in bare_suspicious_domains:
-            if bd not in found_urls and f"http://{bd}" not in found_urls and f"https://{bd}" not in found_urls:
-                found_urls.append(bd)
+        bare_url_candidates = re.findall(
+            r"(?<![@\w])(?:https?://)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.(?:top|vip|xyz|icu|cfd|sbs|cyou|club|fun|shop|site|online|cc|ly|gl|gd|gy|is|at|id|me|tw|co|com|net|org)(?:/[^\s]*)?",
+            user_text,
+            re.IGNORECASE
+        )
+        for bd in bare_url_candidates:
+            bd_clean = bd.rstrip(").,;\"'】」")
+            # 若無 http 前綴且無斜線路徑，僅納入常見短網址或高風險後綴，避免將一般品牌英文縮寫誤判為網址
+            if not bd_clean.lower().startswith("http") and "/" not in bd_clean:
+                if not re.search(r"\.(?:top|vip|xyz|icu|cfd|sbs|cyou|club|fun|shop|site|online|cc|ly|tw|edu\.tw|gov\.tw|com\.tw)$", bd_clean.lower()):
+                    continue
+            if bd_clean not in found_urls and f"http://{bd_clean}" not in found_urls and f"https://{bd_clean}" not in found_urls:
+                found_urls.append(bd_clean)
 
         has_suspicious_url = False
         suspicious_url_str = ""
+        has_path_spoofing = False
         verified_official_urls = []
         for u in found_urls:
             u_clean = u.rstrip(").,;\"'】」")
+            u_low = u_clean.lower()
+            # 擷取斜線前的真實主網域 (Hostname) 與斜線後的路徑 (Path)
+            u_no_proto = re.sub(r"^https?://", "", u_low)
+            parts = u_no_proto.split("/", 1)
+            host_only = parts[0]
+            path_only = "/" + parts[1] if len(parts) > 1 else ""
+
+            # 檢測「短網址斜線路徑偽裝手法」(例如 t.ly/mvdis.gov.tw，真實主網域為 t.ly，卻在斜線後偽造 mvdis.gov.tw)
+            if not host_only.endswith(".gov.tw") and any(k in path_only for k in ["gov.tw", "mvdis", "taipower", "water", "post", "fetc"]):
+                has_path_spoofing = True
+                has_suspicious_url = True
+                suspicious_url_str = u_clean
+                break
+
             resolved_u = self._resolve_redirect_url(u_clean if u_clean.startswith("http") else f"https://{u_clean}")
-            is_trusted = _is_official_trusted_url(u_clean) or _is_official_trusted_url(resolved_u)
+            is_trusted = (not has_path_spoofing) and (_is_official_trusted_url(u_clean) or _is_official_trusted_url(resolved_u))
             if is_trusted:
                 verified_official_urls.append((u_clean, resolved_u))
             else:
@@ -322,7 +346,14 @@ class AntiScamForensicEngine:
 
         # 關鍵詐騙特徵指標
         has_high_risk_tld = bool(re.search(r"\.(?:top|vip|xyz|icu|cfd|sbs|cyou)\b", low_text))
-        has_phishing_link = has_suspicious_url or has_high_risk_tld or (".cc" in low_text)
+        has_imessage_unlock = any(kw in user_text for kw in ["回復1", "回覆1", "回復 1", "回覆 1", "啟動連結", "啟動查詢"])
+        has_gov_bill_keywords = any(kw in user_text for kw in [
+            "交通違規", "違規罰鍰", "違規罰款", "交通罰款", "逾期未到案", "逾期未繳",
+            "水費逾期", "電費逾期", "水費欠繳", "電費欠繳", "執行停水", "即將停水",
+            "通行費", "點數即將到期", "積分即將到期", "線上繳納"
+        ])
+        has_gov_bill_phishing = has_path_spoofing or has_imessage_unlock or (has_gov_bill_keywords and (has_suspicious_url or has_high_risk_tld))
+        has_phishing_link = has_suspicious_url or has_high_risk_tld or has_path_spoofing or (".cc" in low_text and "kktix.cc" not in low_text)
         has_voting_phishing = any(kw in user_text for kw in [
             "繪畫比賽", "參加繪畫", "創意繪畫", "幫忙投一票", "幫我投", "幫忙投",
             "投一票嗎", "寵物比賽", "才藝比賽", "人氣投票", "輔助認證"
@@ -337,9 +368,9 @@ class AntiScamForensicEngine:
 
         # 1. 正常訊息判斷（如果沒有觸發任何明顯詐騙特徵）
         is_scam = (
-            has_voting_phishing or has_email_spoof or has_recurring_fee or has_phishing_link
-            or has_money_trigger or has_legal_threat or has_investment_trap or has_teller_coaching
-            or has_job_or_account_trap or has_urgent_relative_trap or has_crypto_airdrop
+            has_gov_bill_phishing or has_voting_phishing or has_email_spoof or has_recurring_fee
+            or has_phishing_link or has_money_trigger or has_legal_threat or has_investment_trap
+            or has_teller_coaching or has_job_or_account_trap or has_urgent_relative_trap or has_crypto_airdrop
         )
 
         if not is_scam:
@@ -374,11 +405,13 @@ class AntiScamForensicEngine:
 
         # 2. 詐騙特徵鑑識
         matched_case = rag_cases[0] if rag_cases else {
-            "category": "假親友比賽拉票釣魚 / LINE 帳號盜用詐騙" if has_voting_phishing else (
-                "假投資與臨櫃話術詐騙" if has_teller_coaching else (
-                    "假冒官方電子郵件 (假重複扣款/解除分期)" if (has_email_spoof or has_recurring_fee) else (
-                        "釣魚網站與惡意連結詐騙" if has_high_risk_tld else (
-                            "假求職/人頭帳戶詐騙" if has_job_or_account_trap else "疑似詐騙"
+            "category": "假冒政府監理站/民生催繳釣魚簡訊" if has_gov_bill_phishing else (
+                "假親友比賽拉票釣魚 / LINE 帳號盜用詐騙" if has_voting_phishing else (
+                    "假投資與臨櫃話術詐騙" if has_teller_coaching else (
+                        "假冒官方電子郵件 (假重複扣款/解除分期)" if (has_email_spoof or has_recurring_fee) else (
+                            "釣魚網站與惡意連結詐騙" if has_high_risk_tld else (
+                                "假求職/人頭帳戶詐騙" if has_job_or_account_trap else "疑似詐騙"
+                            )
                         )
                     )
                 )
@@ -386,7 +419,9 @@ class AntiScamForensicEngine:
             "tactics": ["冒名欺騙", "誘導點擊釣魚連結"]
         }
 
-        if has_voting_phishing:
+        if has_gov_bill_phishing:
+            category = "假冒政府監理站/民生催繳釣魚簡訊"
+        elif has_voting_phishing:
             category = "假親友比賽拉票釣魚 / LINE 帳號盜用詐騙"
         elif has_email_spoof or has_recurring_fee:
             category = "假冒官方電子郵件 (假重複扣款/解除分期)"
@@ -399,6 +434,24 @@ class AntiScamForensicEngine:
 
         # 根據文本抽取可疑特徵
         red_flags = []
+        if has_path_spoofing:
+            red_flags.append({
+                "quote": suspicious_url_str or "t.ly/mvdis.gov.tw",
+                "issue_type": f"惡意短網址斜線路徑偽裝：真實主網域為境外短網址（如 t.ly），卻在斜線「/」後方偽造「mvdis.gov.tw」字樣魚目混珠假冒政府監理站！",
+                "severity": "HIGH"
+            })
+        if has_imessage_unlock:
+            red_flags.append({
+                "quote": "回復1啟動連結查詢",
+                "issue_type": "典型 iMessage 釣魚簡訊繞過防護話術（誘導受害者回覆「1」以解除 Apple 陌生訊息連結封鎖機制）",
+                "severity": "HIGH"
+            })
+        if has_gov_bill_phishing and not has_path_spoofing:
+            red_flags.append({
+                "quote": "交通違規罰鍰逾期未到案 / 水電費逾期補繳",
+                "issue_type": "假冒政府機關催繳罰單或水電費，製造逾期受罰恐慌誘導線上刷卡盜刷",
+                "severity": "HIGH"
+            })
         if has_voting_phishing:
             red_flags.append({
                 "quote": "小朋友在參加繪畫比賽 可以幫忙投一票嗎 / 幫我投14號",
@@ -423,13 +476,13 @@ class AntiScamForensicEngine:
                 "issue_type": "教戰守則誘導隱瞞銀行行員關懷提問",
                 "severity": "HIGH"
             })
-        if has_phishing_link:
+        if has_phishing_link and not has_path_spoofing:
             target_u = suspicious_url_str or (found_urls[0] if found_urls else "非官方可疑連結")
             red_flags.append({
                 "quote": target_u,
                 "issue_type": (
-                    f"境外高風險免洗釣魚網域 ({target_u})，偽裝成比賽投票或驗證網頁竊取個資與帳號"
-                    if (has_high_risk_tld or has_voting_phishing)
+                    f"境外高風險免洗釣魚網域 ({target_u})，偽裝成比賽投票或政府繳費網頁竊取個資與信用卡"
+                    if (has_high_risk_tld or has_voting_phishing or has_gov_bill_phishing)
                     else "非官方或可疑短網址跳轉"
                 ),
                 "severity": "HIGH"
@@ -454,6 +507,11 @@ class AntiScamForensicEngine:
             })
 
         tactics = []
+        if has_gov_bill_phishing:
+            tactics.append({
+                "tactic_name": "短網址路徑偽裝與 iMessage 互動解鎖陷阱",
+                "description": "詐騙集團利用境外短網址（如 t.ly）並在斜線後自訂『/mvdis.gov.tw』假路徑欺騙視覺，同時要求受害者『回復 1 啟動連結』以繞過 iPhone iMessage 預設關閉陌生釣魚連結的安全防護機制。"
+            })
         if has_voting_phishing:
             tactics.append({
                 "tactic_name": "親友信任綁架與假投票釣魚盜號",
@@ -470,7 +528,14 @@ class AntiScamForensicEngine:
                 "description": f"詐騙方運用『{t}』手法降低受害者的防備心並迫使其在慌亂中採取行動。"
             })
 
-        if has_voting_phishing:
+        if has_gov_bill_phishing:
+            score = 96
+            evidence_msg = (
+                f"經 165 AI 鑑識比對，此訊息為極度危險之【假冒政府監理站/交通罰鍰催繳 iMessage 釣魚簡訊】！"
+                f"破綻一：訊息中的網址「{suspicious_url_str or 't.ly/mvdis.gov.tw'}」採用了狡猾的【斜線路徑偽裝手法】——斜線「/」前方的真實主網域為境外短網址「t.ly」，詐騙集團故意在斜線後方加上「/mvdis.gov.tw」字樣假冒監理服務網（真正的政府網站必須在第一個斜線前以 .gov.tw 結尾）！"
+                f"破綻二：要求「回復 1 啟動連結查詢」是典型的 iMessage 釣魚話術，目的是誘使您回覆訊息以解除蘋果手機對陌生釣魚連結的封鎖。一旦點擊將進入假監理站頁面盜刷您的信用卡！"
+            )
+        elif has_voting_phishing:
             score = 96
             evidence_msg = (
                 f"經 165 AI 鑑識比對，此訊息為極度危險之【假親友比賽拉票釣魚 / LINE 帳號盜用詐騙】！"
@@ -515,13 +580,13 @@ class AntiScamForensicEngine:
             "evidence_analysis": evidence_msg,
             "actionable_guidance": {
                 "immediate_actions": [
-                    "絕對不要點擊訊息中的任何連結（特別是 .top / .vip 投票網址），切勿輸入 LINE 帳號密碼、信用卡或簡訊 OTP 驗證碼。",
-                    "切勿聽從指示進行 LINE 輔助認證、操作 ATM 或開啟網路銀行。"
+                    "絕對不要回覆「1」或點擊訊息中的任何短網址連結（如 t.ly/mvdis.gov.tw 或 .top / .vip 網址），切勿輸入信用卡號、LINE 帳密或 OTP 驗證碼。",
+                    "切勿聽從指示進行線上繳費、LINE 輔助認證、操作 ATM 或開啟網路銀行。"
                 ],
                 "official_verification": [
-                    "請直接撥打電話聯繫該名親友本人，確認其 LINE 帳號是否遭盜用，並提醒對方通知其他親友。",
+                    "若有交通違規罰單疑問，請自行下載官方「監理服務 App」或由 Google 搜尋進入「監理服務網 (https://www.mvdis.gov.tw)」查證（政府已全面停發交通罰單催繳簡訊）。",
                     "立即撥打 165 反詐騙諮詢專線進行查證與通報檢舉。"
                 ],
-                "recommended_safe_reply": "我先打電話跟你本人確認一下，請勿點擊不明投票連結！"
+                "recommended_safe_reply": "請勿回覆此訊息（切勿回覆 1），直接封鎖並回報垃圾訊息！"
             }
         }, ensure_ascii=False)
