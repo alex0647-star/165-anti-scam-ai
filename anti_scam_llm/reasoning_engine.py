@@ -329,20 +329,39 @@ class AntiScamForensicEngine:
                 suspicious_url_str = u_clean
                 break
 
-        # 尋找電子郵件與免費信箱偽冒特徵
+        # 尋找電子郵件與免費信箱偽冒特徵 / 境外信箱 iMessage 亂槍打鳥特徵
         found_emails = re.findall(r"[\w\.-]+@[\w\.-]+\.\w+", user_text)
         has_email_spoof = False
         email_spoof_str = ""
-        FREE_EMAIL_DOMAINS = ["yahoo.co.jp", "yahoo.com", "gmail.com", "outlook.com", "hotmail.com", "qq.com", "163.com", "sina.com"]
+        suspicious_imessage_email = ""
+        FREE_EMAIL_DOMAINS = ["yahoo.co.jp", "yahoo.com", "gmail.com", "outlook.com", "hotmail.com", "qq.com", "163.com", "126.com", "sina.com", "sohu.com", "yeah.net", "foxmail.com", "icloud.com"]
+        CHINA_FREE_EMAILS = ["126.com", "163.com", "qq.com", "sina.com", "sohu.com", "yeah.net", "foxmail.com"]
         for em in found_emails:
             em_low = em.lower()
-            if any(fed in em_low for fed in FREE_EMAIL_DOMAINS):
+            if any( fed in em_low for fed in FREE_EMAIL_DOMAINS):
                 if any(kw in low_text for kw in ["ikea", "宜家", "apple", "netflix", "卡友", "重複訂購", "自動續費", "續費", "分期", "客服", "帳單", "會員"]):
                     has_email_spoof = True
                     email_spoof_str = em
                     break
+            if any(ced in em_low for ced in CHINA_FREE_EMAILS) or (
+                any(fed in em_low for fed in FREE_EMAIL_DOMAINS) and any(k in low_text for k in ["imessage", "not in your contact", "report junk", "加我", "找不到你", "把我刪了"])
+            ):
+                suspicious_imessage_email = em
 
         has_recurring_fee = ("重複訂購" in user_text or "自動續費" in user_text or "重複扣款" in user_text or "扣款未變更" in user_text or "保留方式" in user_text or "解除分期" in user_text)
+
+        # 偵測「亂槍打鳥裝熟誘導加 LINE / 陌生 iMessage 引流詐騙」特徵
+        line_id_match = re.search(r"(?:加我\s*line|加\s*line|line\s*id|line|加賴|加我賴)\s*[:：]\s*([a-zA-Z0-9_.-]{3,})", user_text, re.IGNORECASE)
+        extracted_line_id = line_id_match.group(1) if line_id_match else ""
+        has_cold_line_lure = (
+            any(kw in low_text for kw in [
+                "找不到你", "把我刪了", "有事找你", "有急事找你", "急事找你",
+                "電話打不通", "打不通你電話", "加我line", "加我 line", "加我賴",
+                "加我的line", "加我的賴"
+            ])
+            or bool(line_id_match)
+            or bool(suspicious_imessage_email and ("line" in low_text or "賴" in low_text or "not in your contact" in low_text or "report junk" in low_text))
+        )
 
         # 關鍵詐騙特徵指標
         has_high_risk_tld = bool(re.search(r"\.(?:top|vip|xyz|icu|cfd|sbs|cyou)\b", low_text))
@@ -368,8 +387,9 @@ class AntiScamForensicEngine:
 
         # 1. 正常訊息判斷（如果沒有觸發任何明顯詐騙特徵）
         is_scam = (
-            has_gov_bill_phishing or has_voting_phishing or has_email_spoof or has_recurring_fee
-            or has_phishing_link or has_money_trigger or has_legal_threat or has_investment_trap
+            has_gov_bill_phishing or has_voting_phishing or has_cold_line_lure
+            or has_email_spoof or has_recurring_fee or has_phishing_link
+            or has_money_trigger or has_legal_threat or has_investment_trap
             or has_teller_coaching or has_job_or_account_trap or has_urgent_relative_trap or has_crypto_airdrop
         )
 
@@ -407,22 +427,26 @@ class AntiScamForensicEngine:
         matched_case = rag_cases[0] if rag_cases else {
             "category": "假冒政府監理站/民生催繳釣魚簡訊" if has_gov_bill_phishing else (
                 "假親友比賽拉票釣魚 / LINE 帳號盜用詐騙" if has_voting_phishing else (
-                    "假投資與臨櫃話術詐騙" if has_teller_coaching else (
-                        "假冒官方電子郵件 (假重複扣款/解除分期)" if (has_email_spoof or has_recurring_fee) else (
-                            "釣魚網站與惡意連結詐騙" if has_high_risk_tld else (
-                                "假求職/人頭帳戶詐騙" if has_job_or_account_trap else "疑似詐騙"
+                    "假親友裝熟引流詐騙 / iMessage 誘導加 LINE (殺豬盤與假投資前導)" if has_cold_line_lure else (
+                        "假投資與臨櫃話術詐騙" if has_teller_coaching else (
+                            "假冒官方電子郵件 (假重複扣款/解除分期)" if (has_email_spoof or has_recurring_fee) else (
+                                "釣魚網站與惡意連結詐騙" if has_high_risk_tld else (
+                                    "假求職/人頭帳戶詐騙" if has_job_or_account_trap else "疑似詐騙"
+                                )
                             )
                         )
                     )
                 )
             ),
-            "tactics": ["冒名欺騙", "誘導點擊釣魚連結"]
+            "tactics": ["冒名欺騙", "誘導私加 LINE 帳號"]
         }
 
         if has_gov_bill_phishing:
             category = "假冒政府監理站/民生催繳釣魚簡訊"
         elif has_voting_phishing:
             category = "假親友比賽拉票釣魚 / LINE 帳號盜用詐騙"
+        elif has_cold_line_lure and not (has_investment_trap or has_money_trigger or has_legal_threat):
+            category = "假親友裝熟引流詐騙 / iMessage 誘導加 LINE (殺豬盤與假投資前導)"
         elif has_email_spoof or has_recurring_fee:
             category = "假冒官方電子郵件 (假重複扣款/解除分期)"
         elif has_teller_coaching:
@@ -452,6 +476,25 @@ class AntiScamForensicEngine:
                 "issue_type": "假冒政府機關催繳罰單或水電費，製造逾期受罰恐慌誘導線上刷卡盜刷",
                 "severity": "HIGH"
             })
+        if suspicious_imessage_email:
+            red_flags.append({
+                "quote": f"發信帳號：{suspicious_imessage_email} (iMessage)",
+                "issue_type": f"使用中國網易/境外免費信箱 ({suspicious_imessage_email}) 透過 iMessage 批量群發垃圾簡訊，正常台灣親友簡訊絕不會以 @126.com / @163.com 信箱傳送！",
+                "severity": "HIGH"
+            })
+        if has_cold_line_lure:
+            id_note = f" (可疑 LINE ID: {extracted_line_id})" if extracted_line_id else ""
+            red_flags.append({
+                "quote": f"Line好友怎麼找不到你了 你是不是把我刪了？有事找你 加我 Line{id_note}",
+                "issue_type": "典型「亂槍打鳥裝熟加 LINE」引流話術：故意不署名、不稱呼收件人姓名，利用好奇心誘騙受害者主動加 LINE，規避官方封號機制",
+                "severity": "HIGH"
+            })
+            if "not in your contact" in low_text or "report junk" in low_text:
+                red_flags.append({
+                    "quote": "The sender is not in your contact list / Report Junk",
+                    "issue_type": "手機系統已明確警示此發信人根本不在您的通訊錄聯絡人名單中，直接戳破其「熟人找你」之謊言",
+                    "severity": "HIGH"
+                })
         if has_voting_phishing:
             red_flags.append({
                 "quote": "小朋友在參加繪畫比賽 可以幫忙投一票嗎 / 幫我投14號",
@@ -512,6 +555,11 @@ class AntiScamForensicEngine:
                 "tactic_name": "短網址路徑偽裝與 iMessage 互動解鎖陷阱",
                 "description": "詐騙集團利用境外短網址（如 t.ly）並在斜線後自訂『/mvdis.gov.tw』假路徑欺騙視覺，同時要求受害者『回復 1 啟動連結』以繞過 iPhone iMessage 預設關閉陌生釣魚連結的安全防護機制。"
             })
+        if has_cold_line_lure:
+            tactics.append({
+                "tactic_name": "無具名裝熟激發好奇心與規避平台封號",
+                "description": "因為詐騙 LINE 帳號若主動大量加陌生人好友會被 LINE 官方封鎖，詐騙集團改以境外免費信箱（如 @126.com）透過 iMessage 免費群發「你是不是把我刪了？有事找你加我 Line」，誘使受害者主動加好友後，再以「認錯人交個朋友（殺豬盤）」或「飆股投資群組」進行詐騙。"
+            })
         if has_voting_phishing:
             tactics.append({
                 "tactic_name": "親友信任綁架與假投票釣魚盜號",
@@ -542,6 +590,13 @@ class AntiScamForensicEngine:
                 f"詐騙集團先盜用親友的 LINE 帳號，以「有在忙嗎」、「小朋友在參加繪畫比賽，可以幫忙投一票嗎（如幫我投14號）」為由降低您的戒心，"
                 f"並附上高風險境外免洗釣魚網址（{suspicious_url_str or '如 .top / .vip 亂數網域'}）。"
                 f"一旦點擊投票，該網站會要求您輸入「LINE 帳號、密碼與手機簡訊 OTP 認證碼」，進而瞬間盜走您的 LINE 帳號並繼續向您的通訊錄親友行騙或借錢！"
+            )
+        elif has_cold_line_lure and not (has_investment_trap or has_money_trigger or has_legal_threat):
+            score = 93
+            evidence_msg = (
+                f"經 165 AI 鑑識比對，此訊息為極度典型之【亂槍打鳥裝熟加 LINE 引流詐騙（殺豬盤與假投資前導垃圾簡訊）】！\n"
+                f"• 破綻一（異常境外發信通道）：發信人並非台灣手機門號，而是使用中國大陸網易免費信箱（{suspicious_imessage_email or '如 @126.com / @163.com'}）透過 Apple iMessage 免付費批量群發，且手機已顯示「寄件人不在您的聯絡人列表中 (Report Junk)」。\n"
+                f"• 破綻二（無具名裝熟心理戰）：全篇訊息完全講不出自己的名字與您的姓名，僅用「Line好友怎麼找不到你了？你是不是把我刪了？有事找你加我 Line：{extracted_line_id or '私人ID'}」激發好奇心。一旦您主動加好友，對方就會以「認錯人交個朋友（愛情殺豬盤）」或拉入「假投資飆股群組」進行詐騙！"
             )
         elif has_email_spoof or has_recurring_fee:
             score = 95
@@ -580,13 +635,19 @@ class AntiScamForensicEngine:
             "evidence_analysis": evidence_msg,
             "actionable_guidance": {
                 "immediate_actions": [
+                    "絕對不要在 LINE 搜尋並加入該陌生 ID（如 q09166），亦不要回覆此 iMessage 簡訊。",
+                    "請直接點擊畫面下方的「Report Junk（回報垃圾訊息）」並刪除對話，切勿點擊任何連結或輸入個資。"
+                ] if has_cold_line_lure else [
                     "絕對不要回覆「1」或點擊訊息中的任何短網址連結（如 t.ly/mvdis.gov.tw 或 .top / .vip 網址），切勿輸入信用卡號、LINE 帳密或 OTP 驗證碼。",
                     "切勿聽從指示進行線上繳費、LINE 輔助認證、操作 ATM 或開啟網路銀行。"
                 ],
                 "official_verification": [
+                    "可至 iPhone「設定 ➔ 訊息 ➔ 未知與垃圾訊息」開啟「過濾未知的寄件人」，阻擋境外免費信箱群發之垃圾 iMessage。",
+                    "立即撥打 165 反詐騙諮詢專線進行查證與通報檢舉。"
+                ] if has_cold_line_lure else [
                     "若有交通違規罰單疑問，請自行下載官方「監理服務 App」或由 Google 搜尋進入「監理服務網 (https://www.mvdis.gov.tw)」查證（政府已全面停發交通罰單催繳簡訊）。",
                     "立即撥打 165 反詐騙諮詢專線進行查證與通報檢舉。"
                 ],
-                "recommended_safe_reply": "請勿回覆此訊息（切勿回覆 1），直接封鎖並回報垃圾訊息！"
+                "recommended_safe_reply": "請勿理會或加 LINE，直接點選「回報垃圾訊息 (Report Junk)」刪除！" if has_cold_line_lure else "請勿回覆此訊息（切勿回覆 1），直接封鎖並回報垃圾訊息！"
             }
         }, ensure_ascii=False)
