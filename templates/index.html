@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🛡️ 165 AI 智能多模態防詐騙鑑識工作台 (Flask Web Edition)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body {
+            background-color: #0B1120;
+            color: #F8FAFC;
+            font-family: "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif;
+        }
+        .glass-card {
+            background: rgba(30, 41, 59, 0.75);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(148, 163, 184, 0.16);
+        }
+        .tab-btn.active {
+            background: linear-gradient(135deg, #0284C7 0%, #2563EB 100%);
+            color: #FFFFFF;
+            border-color: #38BDF8;
+            box-shadow: 0 4px 15px rgba(56, 189, 248, 0.25);
+        }
+        .red-flag-item {
+            background-color: rgba(239, 68, 68, 0.14);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            border-left: 5px solid #EF4444;
+        }
+        .safe-item {
+            background-color: rgba(34, 197, 94, 0.14);
+            border: 1px solid rgba(34, 197, 94, 0.4);
+            border-left: 5px solid #22C55E;
+        }
+        .pulse-dot {
+            animation: pulse-ring 2s infinite;
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- 頂部導航列 -->
+    <header class="border-b border-slate-800 bg-slate-900/90 sticky top-0 z-50 backdrop-blur">
+        <div class="max-w-7xl mx-auto px-4 py-3.5 flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+                <div class="w-11 h-11 rounded-xl bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-2xl">
+                    🛡️
+                </div>
+                <div>
+                    <h1 class="text-xl md:text-2xl font-extrabold text-sky-400 tracking-wide">
+                        165 AI 智能多模態防詐騙鑑識工作台
+                    </h1>
+                    <p class="text-xs text-slate-400">
+                        Flask 高速無重刷互動版 ｜ 結合 CoT 思維鏈、三層 OCR、AI 深偽影片檢測與警政署 165.npa.gov.tw 即時情資
+                    </p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-dot"></span>
+                    165 鑑識引擎：在線守護中
+                </span>
+                <a href="https://line.me/R/ti/p/@325readm" target="_blank"
+                   class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold bg-[#06C755] hover:bg-[#05b34c] text-white transition shadow">
+                    <i class="fa-brands fa-line text-base"></i> 加入 LINE 防詐機器人 (@325readm)
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主內容區 -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 py-6">
+
+        <!-- 五大功能頁籤切換列 -->
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-2.5 mb-6">
+            <button onclick="switchTab('text')" id="tab-btn-text"
+                    class="tab-btn active px-4 py-3 rounded-xl font-bold text-sm border border-slate-700 bg-slate-800/80 text-slate-300 transition flex items-center justify-center gap-2">
+                <span>💬</span> 即時文字鑑識
+            </button>
+            <button onclick="switchTab('image')" id="tab-btn-image"
+                    class="tab-btn px-4 py-3 rounded-xl font-bold text-sm border border-slate-700 bg-slate-800/80 text-slate-300 transition flex items-center justify-center gap-2">
+                <span>📸</span> 多模態截圖鑑識
+            </button>
+            <button onclick="switchTab('video')" id="tab-btn-video"
+                    class="tab-btn px-4 py-3 rounded-xl font-bold text-sm border border-slate-700 bg-slate-800/80 text-slate-300 transition flex items-center justify-center gap-2">
+                <span>🎬</span> AI 深偽影片鑑識
+            </button>
+            <button onclick="switchTab('kb')" id="tab-btn-kb"
+                    class="tab-btn px-4 py-3 rounded-xl font-bold text-sm border border-slate-700 bg-slate-800/80 text-slate-300 transition flex items-center justify-center gap-2">
+                <span>📚</span> 165 官網同步與知識庫
+            </button>
+            <button onclick="switchTab('bench')" id="tab-btn-bench"
+                    class="tab-btn col-span-2 md:col-span-1 px-4 py-3 rounded-xl font-bold text-sm border border-slate-700 bg-slate-800/80 text-slate-300 transition flex items-center justify-center gap-2">
+                <span>📊</span> 20 筆黃金基準測試
+            </button>
+        </div>
+
+        <!-- 全域 Loading 喚醒與進度提示框 -->
+        <div id="global-loading" class="hidden mb-6 glass-card rounded-2xl p-5 border-l-4 border-sky-400">
+            <div class="flex items-center gap-4">
+                <div class="w-10 h-10 rounded-full border-4 border-sky-400 border-t-transparent animate-spin shrink-0"></div>
+                <div>
+                    <h4 id="loading-title" class="font-bold text-sky-300 text-base">
+                        🚀 正在喚醒 165 AI 鑑識核心並執行深度分析...
+                    </h4>
+                    <p id="loading-subtitle" class="text-xs text-slate-300 mt-0.5">
+                        系統正在檢索 165 詐騙知識庫、展開短網址轉址並比對警政署通報清單，請稍候約 1～5 秒。
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== TAB 1: 即時文字鑑識 ==================== -->
+        <section id="panel-text" class="tab-panel grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div class="lg:col-span-5 glass-card rounded-2xl p-5">
+                <h2 class="text-lg font-bold text-white mb-2 flex items-center gap-2">
+                    <i class="fa-solid fa-message text-sky-400"></i> 輸入待鑑識訊息或網址
+                </h2>
+                <p class="text-xs text-slate-400 mb-3">快速載入經典與新型測試範例（點擊後自動啟動鑑識）：</p>
+                <div class="grid grid-cols-2 gap-2 mb-4">
+                    <button onclick="fillTextSample('stock')" class="px-3 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 border border-slate-600 text-sky-300 transition text-left">
+                        📈 假飆股 + 165通報LINE
+                    </button>
+                    <button onclick="fillTextSample('trojan')" class="px-3 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 border border-slate-600 text-rose-300 transition text-left">
+                        🦠 黑貓包裹木馬簡訊
+                    </button>
+                    <button onclick="fillTextSample('mvdis')" class="px-3 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 border border-slate-600 text-amber-300 transition text-left">
+                        🚗 假監理站斜線偽裝網址
+                    </button>
+                    <button onclick="fillTextSample('safe_twm')" class="px-3 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 border border-slate-600 text-emerald-300 transition text-left">
+                        🟢 正常台哥大與iPAS通知
+                    </button>
+                </div>
+
+                <textarea id="input-text" rows="7"
+                          class="w-full rounded-xl bg-slate-900/90 border border-slate-700 p-3.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-400"
+                          placeholder="請貼上簡訊、LINE 對話、電子郵件、短網址或 YouTube/TikTok 影片連結..."></textarea>
+
+                <button onclick="analyzeText()"
+                        class="mt-4 w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white shadow-lg transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-shield-halved"></i> 啟動 AI 鑑識分析
+                </button>
+            </div>
+
+            <div class="lg:col-span-7 glass-card rounded-2xl p-5">
+                <h2 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                    <i class="fa-solid fa-magnifying-glass-chart text-sky-400"></i> 鑑識分析報告
+                </h2>
+                <div id="text-result-container" class="text-sm text-slate-300">
+                    <div class="p-6 rounded-xl bg-slate-900/60 border border-slate-800 text-center text-slate-400">
+                        💡 請在左側輸入訊息內容或點選上方測試範例，系統將無重刷即時呈現鑑識報告。
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== TAB 2: 多模態截圖鑑識 ==================== -->
+        <section id="panel-image" class="tab-panel hidden grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div class="lg:col-span-5 glass-card rounded-2xl p-5">
+                <h2 class="text-lg font-bold text-white mb-2 flex items-center gap-2">
+                    <i class="fa-solid fa-camera text-sky-400"></i> 對話截圖 / 簡訊圖片多模態分析
+                </h2>
+                <p class="text-xs text-slate-400 mb-4">
+                    內建三層式高可用視覺 OCR（Gemini Vision + 本地 RapidOCR + Cloud OCR 備援），永不因 API 配額耗盡中斷。
+                </p>
+
+                <label class="block w-full border-2 border-dashed border-slate-600 hover:border-sky-400 rounded-2xl p-6 text-center cursor-pointer transition bg-slate-900/50">
+                    <i class="fa-solid fa-cloud-arrow-up text-3xl text-sky-400 mb-2"></i>
+                    <p class="text-sm font-semibold text-slate-200">點擊選擇或拖曳截圖檔案至此 (PNG, JPG, JPEG)</p>
+                    <input type="file" id="input-image" accept="image/*" class="hidden" onchange="previewImage(this)">
+                </label>
+
+                <div id="image-preview-wrap" class="hidden mt-4">
+                    <img id="image-preview" class="max-h-72 mx-auto rounded-xl border border-slate-700" alt="預覽圖">
+                </div>
+
+                <button onclick="analyzeImage()"
+                        class="mt-4 w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white shadow-lg transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-eye"></i> 鑑識此截圖
+                </button>
+            </div>
+
+            <div class="lg:col-span-7 glass-card rounded-2xl p-5">
+                <h2 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                    <i class="fa-solid fa-file-shield text-sky-400"></i> 圖片視覺鑑識報告
+                </h2>
+                <div id="image-result-container" class="text-sm text-slate-300">
+                    <div class="p-6 rounded-xl bg-slate-900/60 border border-slate-800 text-center text-slate-400">
+                        💡 請在左側上傳手機簡訊或 LINE 對話截圖以啟動多模態視覺鑑識。
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== TAB 3: AI 深偽影片鑑識 ==================== -->
+        <section id="panel-video" class="tab-panel hidden grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div class="lg:col-span-5 glass-card rounded-2xl p-5">
+                <h2 class="text-lg font-bold text-white mb-2 flex items-center gap-2">
+                    <i class="fa-solid fa-film text-sky-400"></i> AI 深偽影片與短影音連結鑑識
+                </h2>
+                <p class="text-xs text-slate-400 mb-3">
+                    支援直接貼上 <b>YouTube / Shorts / TikTok / FB Reels / IG 影片連結</b> 或上傳 <b>.mp4 影片檔</b>，自動抽幀合成 2x2 時序拼圖並核驗名人肖像與頻道真偽！
+                </p>
+
+                <p class="text-xs text-slate-400 mb-2">快速載入實戰測試範例：</p>
+                <div class="grid grid-cols-1 gap-2 mb-3">
+                    <button onclick="fillVideoSample('jensen')" class="px-3 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 border border-slate-600 text-rose-300 transition text-left">
+                        🎭 範例 1：假冒黃仁勳 AI 換臉演講報明牌 + 165通報LINE
+                    </button>
+                    <button onclick="fillVideoSample('morris')" class="px-3 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 border border-slate-600 text-amber-300 transition text-left">
+                        🤖 範例 2：AI 數字人主播 (張忠謀退休理財密碼引流短影音)
+                    </button>
+                    <button onclick="fillVideoSample('safe_news')" class="px-3 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 border border-slate-600 text-emerald-300 transition text-left">
+                        ✅ 範例 3：正常官方電視台 165 反詐騙宣導影片
+                    </button>
+                </div>
+
+                <label class="block text-xs font-semibold text-slate-300 mb-1">🔗 方式一：貼上影片網址 (URL)</label>
+                <input type="text" id="input-video-url"
+                       class="w-full rounded-xl bg-slate-900/90 border border-slate-700 p-3 text-sm text-white placeholder-slate-500 mb-3"
+                       placeholder="例如：https://www.youtube.com/shorts/... 或 https://www.tiktok.com/...">
+
+                <label class="block text-xs font-semibold text-slate-300 mb-1">📝 補充影片字幕或貼文文案（選填）</label>
+                <textarea id="input-video-ctx" rows="3"
+                          class="w-full rounded-xl bg-slate-900/90 border border-slate-700 p-3 text-sm text-white placeholder-slate-500 mb-3"
+                          placeholder="可選填影片中聽到的台詞、跑馬燈字幕或社群貼文附帶的加 LINE 訊息..."></textarea>
+
+                <label class="block text-xs font-semibold text-slate-300 mb-1">📤 方式二：或直接上傳影片檔 (.mp4 / .mov / .webm)</label>
+                <input type="file" id="input-video-file" accept="video/mp4,video/quicktime,video/webm"
+                       class="w-full text-xs text-slate-300 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-slate-700 file:text-sky-300 hover:file:bg-slate-600 mb-4">
+
+                <button onclick="analyzeVideo()"
+                        class="w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-purple-600 to-sky-500 hover:from-purple-500 hover:to-sky-400 text-white shadow-lg transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> 啟動 AI 深偽影片與頻道鑑識
+                </button>
+            </div>
+
+            <div class="lg:col-span-7 glass-card rounded-2xl p-5">
+                <h2 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                    <i class="fa-solid fa-clapperboard text-sky-400"></i> 視訊深偽與頻道鑑識報告
+                </h2>
+                <div id="video-result-container" class="text-sm text-slate-300">
+                    <div class="p-6 rounded-xl bg-slate-900/60 border border-slate-800 text-center text-slate-400">
+                        💡 請在左側貼上影片連結（或點選範例）或上傳 .mp4 影片檔，系統將自動抽取 2x2 關鍵影格時序網格圖並執行三維度 AI 深偽鑑識。
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== TAB 4: 165 官網同步與知識庫 ==================== -->
+        <section id="panel-kb" class="tab-panel hidden space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- 左：165 官網即時同步 -->
+                <div class="glass-card rounded-2xl p-5">
+                    <h3 class="text-base font-bold text-sky-400 mb-1">🔄 警政署 165 全民防騙網即時同步</h3>
+                    <p class="text-xs text-slate-400 mb-4">
+                        直連 <code class="text-amber-300">165.npa.gov.tw/api/article/list/1</code> 與 <code class="text-amber-300">/list/9</code>，即時拉取最新防詐公告與每日民眾通報涉詐廣告清單。
+                    </p>
+                    <button onclick="sync165Official()"
+                            class="w-full py-2.5 rounded-xl font-bold text-sm bg-sky-600 hover:bg-sky-500 text-white transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-rotate"></i> 立即連線 165 官網同步最新詐騙手法
+                    </button>
+                    <div id="sync-165-result" class="mt-3 text-xs"></div>
+                </div>
+
+                <!-- 右：165 涉詐 LINE ID 查驗 -->
+                <div class="glass-card rounded-2xl p-5">
+                    <h3 class="text-base font-bold text-amber-400 mb-1">🕵️ 165 官方通報涉詐 LINE ID 即時查驗</h3>
+                    <p class="text-xs text-slate-400 mb-4">
+                        直連 <code class="text-amber-300">165.npa.gov.tw/api/queryLineId/{id}</code> 查驗是否已被警方通報（測試範例：<code class="text-rose-300 cursor-pointer underline" onclick="document.getElementById('query-line-id').value='peakchaser116'">peakchaser116</code>）。
+                    </p>
+                    <div class="flex gap-2">
+                        <input type="text" id="query-line-id" value="peakchaser116"
+                               class="flex-1 rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2 text-sm text-white"
+                               placeholder="輸入欲查驗之 LINE ID (如 peakchaser116)">
+                        <button onclick="check165LineId()"
+                                class="px-5 py-2 rounded-xl font-bold text-sm bg-amber-500 hover:bg-amber-400 text-slate-950 transition">
+                            🔎 查驗
+                        </button>
+                    </div>
+                    <div id="line-id-result" class="mt-3 text-xs"></div>
+                </div>
+            </div>
+
+            <!-- 知識庫列表 -->
+            <div class="glass-card rounded-2xl p-5">
+                <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <h3 class="text-base font-bold text-white">📚 165 反詐騙劇本與手法特徵庫 (共 <span id="kb-count">{{ kb_entries|length }}</span> 筆)</h3>
+                    <input type="text" id="kb-search" oninput="filterKB()"
+                           class="w-full md:w-80 rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2 text-xs text-white"
+                           placeholder="🔎 搜尋關鍵字（如：普發現金、木馬、一頁式、飆股、Deepfake）">
+                </div>
+                <div id="kb-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {% for item in kb_entries %}
+                    <div class="kb-item p-4 rounded-xl bg-slate-900/75 border border-slate-800 hover:border-sky-500/40 transition"
+                         data-search="{{ item.category }} {{ item.summary }} {{ item.keywords|join(' ') }}">
+                        <div class="flex items-center justify-between mb-1.5">
+                            <span class="font-bold text-sky-300 text-sm">📌 {{ item.category }}</span>
+                            <span class="text-[11px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">{{ item.id }}</span>
+                        </div>
+                        <p class="text-xs text-slate-300 leading-relaxed mb-2">{{ item.summary }}</p>
+                        <div class="text-[11px] text-amber-300/90 mb-1.5">
+                            🏷️ 關鍵字：{{ item.keywords|join('、') }}
+                        </div>
+                        <div class="text-[11px] text-emerald-300/90 bg-emerald-950/30 border border-emerald-800/40 rounded-lg p-2">
+                            🛡️ <b>165 防範對策：</b>{{ item.solution }}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== TAB 5: 基準測試評估 ==================== -->
+        <section id="panel-bench" class="tab-panel hidden glass-card rounded-2xl p-6">
+            <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+                <div>
+                    <h2 class="text-lg font-bold text-white">📊 系統基準測試與量化評估 (20 筆黃金測試集)</h2>
+                    <p class="text-xs text-slate-400">涵蓋經典高發詐騙、同音變形錯字 (`賴我`、`投貲`、`L1ne`)、新型科技詐騙與正常合法訊息對照組。</p>
+                </div>
+                <button onclick="runBenchmark()"
+                        class="px-5 py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-lg transition flex items-center gap-2">
+                    <i class="fa-solid fa-play"></i> 立即執行完整 20 筆基準測試
+                </button>
+            </div>
+            <div id="bench-result-container" class="text-sm text-slate-300">
+                <div class="p-6 rounded-xl bg-slate-900/60 border border-slate-800 text-center text-slate-400">
+                    💡 點擊右上角「立即執行完整 20 筆基準測試」以即時計算準確率 (Accuracy)、召回率 (Recall) 與誤報率 (FPR)。
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="border-t border-slate-800/80 py-4 text-center text-xs text-slate-500">
+        🛡️ 165 AI 智能多模態防詐騙鑑識系統 ｜ 支援 Web 互動工作台 & LINE 官方機器人 (@325readm) ｜ 直連內政部警政署 165 全民防騙網開放情資
+    </footer>
+
+    <script>
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-panel').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById('panel-' + tab).classList.remove('hidden');
+            document.getElementById('tab-btn-' + tab).classList.add('active');
+        }
+
+        function showLoading(title, subtitle) {
+            const box = document.getElementById('global-loading');
+            document.getElementById('loading-title').innerText = title || '🚀 正在喚醒 165 AI 鑑識核心並執行深度分析...';
+            document.getElementById('loading-subtitle').innerText = subtitle || '系統正在檢索 165 詐騙知識庫、展開短網址轉址並比對警政署通報清單，請稍候...';
+            box.classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('global-loading').classList.add('hidden');
+        }
+
+        function fillTextSample(type) {
+            const samples = {
+                stock: "【台股實戰學院】張老師親自帶盤！佈局下半年翻倍黑馬飆股，上週帶會員獲利達 45%。免費領取精準進出場點位，請加助理 LINE：peakchaser116",
+                trojan: "您有一件包裹簽收單電子憑證請查收。黑貓宅急便 http://goo.gl/976Zaj\n王小明 上次聚會的照片，你存檔一下 http://goo.gl/I8QX9A",
+                mvdis: "【監理服務網】您有一筆交通違規罰鍰逾期未到案，請於今日內線上辦理繳納，否則將移送強制執行：https://t.ly/mvdis.gov.tw (請回復 1 啟動連結查詢)",
+                safe_twm: "【台灣大哥大繳款成功通知】您於 2026/10/28 以全國繳費網繳款 688 元，入帳資訊請至 https://twm5g.co/7tEs 。\n【iPAS Talk｜AI x 資安跨域人才沙龍】立即報名：bsms.tw/oCW9Bo"
+            };
+            document.getElementById('input-text').value = samples[type] || '';
+            analyzeText();
+        }
+
+        function fillVideoSample(type) {
+            if (type === 'jensen') {
+                document.getElementById('input-video-url').value = "https://www.youtube.com/watch?v=aqz-KE-bpKQ";
+                document.getElementById('input-video-ctx').value = "【AI換臉深偽測試】黃仁勳最新內部演講：台灣散戶最後翻身機會！免費領取下半年 AI 飆股名單與公益贈書，請點擊下方說明欄連結加助教 LINE：peakchaser116";
+            } else if (type === 'morris') {
+                document.getElementById('input-video-url').value = "https://www.youtube.com/watch?v=jNQXAC9IVRw";
+                document.getElementById('input-video-ctx').value = "【AI生成主播 HeyGen 深偽短影音】張忠謀親授退休理財密碼，保證獲利 60% 以上，名額有限請私訊領取代碼加 LINE";
+            } else {
+                document.getElementById('input-video-url').value = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+                document.getElementById('input-video-ctx').value = "【台視新聞 TTV News 官方頻道】內政部警政署 165 反詐騙宣導：提醒民眾小心網路投資詐騙，遇可疑訊息請撥打 165 專線查證。";
+            }
+            analyzeVideo();
+        }
+
+        function renderForensicReport(data, ocrText, ocrSource) {
+            const score = data.risk_score;
+            let badgeColor = '#22C55E';
+            let statusTitle = '🟢 安全 (正常訊息 / 官方通知)';
+            if (score > 80) {
+                badgeColor = '#EF4444';
+                statusTitle = '🔴 極度危險 (高機率詐騙)';
+            } else if (score > 60) {
+                badgeColor = '#F97316';
+                statusTitle = '🟠 中度風險 (疑似詐騙陷阱)';
+            } else if (score > 30) {
+                badgeColor = '#EAB308';
+                statusTitle = '🟡 低度疑慮 (請提高警覺)';
+            }
+
+            let html = '';
+            if (ocrText) {
+                html += `
+                <div class="mb-4 p-3.5 rounded-xl bg-emerald-950/30 border border-emerald-700/40">
+                    <div class="text-xs font-bold text-emerald-400 mb-1">🟢 多模態 OCR 辨識成功（核心：<code class="text-yellow-300">${ocrSource || 'vision-ocr'}</code>）</div>
+                    <pre class="text-xs text-slate-300 whitespace-pre-wrap font-sans max-h-28 overflow-y-auto">${ocrText}</pre>
+                </div>`;
+            }
+
+            html += `
+            <div style="background-color:${badgeColor}18; border:1px solid ${badgeColor}55; border-left:6px solid ${badgeColor};" class="p-4 rounded-xl mb-4">
+                <h3 style="color:${badgeColor};" class="text-lg font-extrabold">${statusTitle}</h3>
+                <div class="mt-2 flex flex-wrap gap-3 text-xs">
+                    <span>📊 量化風險指數：<code class="px-2 py-0.5 rounded bg-black/50 text-yellow-300 font-bold">${score} / 100</code></span>
+                    <span>🎯 判定手法類型：<code class="px-2 py-0.5 rounded bg-black/50 text-sky-300 font-bold">${data.primary_scam_type}</code></span>
+                </div>
+            </div>
+            <div class="mb-4">
+                <h4 class="font-bold text-white mb-1.5">📑 鑑識論證與手法剖析：</h4>
+                <p class="text-slate-200 leading-relaxed whitespace-pre-line bg-slate-900/70 p-3.5 rounded-xl border border-slate-800">${data.evidence_analysis}</p>
+            </div>`;
+
+            if (data.red_flags && data.red_flags.length > 0) {
+                html += `<div class="mb-4"><h4 class="font-bold text-rose-400 mb-2">🚩 偵測到的可疑特徵點 (破綻標註)：</h4><div class="space-y-2">`;
+                data.red_flags.forEach(rf => {
+                    html += `
+                    <div class="red-flag-item p-3 rounded-lg text-xs">
+                        <strong class="text-rose-400">[${rf.severity}]</strong>
+                        「<code class="px-1.5 py-0.5 rounded bg-black/50 text-yellow-200">${rf.quote}</code>」 ➔
+                        <span class="text-slate-100 font-medium">${rf.issue_type}</span>
+                    </div>`;
+                });
+                html += `</div></div>`;
+            }
+
+            html += `
+            <div class="p-4 rounded-xl bg-slate-900/80 border border-slate-800">
+                <h4 class="font-bold text-sky-400 mb-2">🛡️ 165 官方安全防護與處置指南：</h4>
+                <div class="space-y-1 text-xs mb-2">
+                    ${(data.immediate_actions || []).map(a => `<div>${score <= 30 ? '🟢' : '❌'} ${a}</div>`).join('')}
+                </div>
+                <div class="space-y-1 text-xs text-emerald-300">
+                    ${(data.official_verification || []).map(v => `<div>✅ ${v}</div>`).join('')}
+                </div>
+            </div>`;
+            return html;
+        }
+
+        async function analyzeText() {
+            const text = document.getElementById('input-text').value.trim();
+            if (!text) {
+                alert('請先貼上或輸入待鑑識的訊息內容！');
+                return;
+            }
+            showLoading('🚀 正在啟動 165 AI 文字與網址鑑識...', '正在展開短網址、檢索 165 知識庫並即時查驗警政署涉詐 LINE ID...');
+            try {
+                const resp = await fetch('/api/analyze-text', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({text})
+                });
+                const data = await resp.json();
+                document.getElementById('text-result-container').innerHTML = renderForensicReport(data);
+            } catch (e) {
+                document.getElementById('text-result-container').innerHTML = `<div class="text-rose-400">鑑識連線異常：${e}</div>`;
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function previewImage(input) {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = e => {
+                    document.getElementById('image-preview').src = e.target.result;
+                    document.getElementById('image-preview-wrap').classList.remove('hidden');
+                };
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        async function analyzeImage() {
+            const fileInput = document.getElementById('input-image');
+            if (!fileInput.files || !fileInput.files[0]) {
+                alert('請先選擇要上傳的截圖檔案！');
+                return;
+            }
+            const formData = new FormData();
+            formData.append('image', fileInput.files[0]);
+            showLoading('📸 正在進行多模態視覺 OCR 與 165 防詐鑑識...', '系統正在提取截圖文字、縫合跨行網址並比對 185+ 官方白名單...');
+            try {
+                const resp = await fetch('/api/analyze-image', { method: 'POST', body: formData });
+                const data = await resp.json();
+                document.getElementById('image-result-container').innerHTML = renderForensicReport(data.report, data.ocr_text, data.ocr_source);
+            } catch (e) {
+                document.getElementById('image-result-container').innerHTML = `<div class="text-rose-400">截圖鑑識失敗：${e}</div>`;
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function analyzeVideo() {
+            const videoUrl = document.getElementById('input-video-url').value.trim();
+            const videoCtx = document.getElementById('input-video-ctx').value.trim();
+            const videoFile = document.getElementById('input-video-file').files[0];
+            if (!videoUrl && !videoCtx && !videoFile) {
+                alert('請貼上影片連結或上傳影片檔案！');
+                return;
+            }
+            const formData = new FormData();
+            formData.append('video_url', videoUrl);
+            formData.append('user_context', videoCtx);
+            if (videoFile) formData.append('video_file', videoFile);
+
+            showLoading('🎬 正在連線抽取影片關鍵影格並進行 AI 深偽 (Deepfake) 鑑識...', '正在合成 2x2 時序鑑識網格圖、計算人臉頻域紋理比值並核驗頻道來源...');
+            try {
+                const resp = await fetch('/api/analyze-video', { method: 'POST', body: formData });
+                const vr = await resp.json();
+                const score = vr.scam_risk_score || 10;
+                const dfProb = vr.deepfake_probability || 12;
+                const badgeColor = (score <= 30 && dfProb <= 30) ? '#22C55E' : ((score <= 65 && dfProb <= 65) ? '#F97316' : '#EF4444');
+
+                let html = `
+                <div style="background-color:${badgeColor}18; border:1px solid ${badgeColor}55; border-left:6px solid ${badgeColor};" class="p-4 rounded-xl mb-4">
+                    <h3 style="color:${badgeColor};" class="text-lg font-extrabold">${vr.verdict_title}</h3>
+                    <div class="mt-2 flex flex-wrap gap-3 text-xs">
+                        <span>🤖 AI 深偽合成機率：<code class="px-2 py-0.5 rounded bg-black/50 text-yellow-300 font-bold">${dfProb}%</code></span>
+                        <span>🚨 綜合詐騙風險：<code class="px-2 py-0.5 rounded bg-black/50 text-rose-300 font-bold">${score} / 100</code></span>
+                        <span>📌 判定類型：<code class="px-2 py-0.5 rounded bg-black/50 text-sky-300 font-bold">${vr.primary_type}</code></span>
+                    </div>
+                </div>`;
+
+                if (vr.grid_image_b64) {
+                    html += `
+                    <div class="mb-4">
+                        <h4 class="font-bold text-sky-300 text-xs mb-1.5">🖼️ 系統自動抽取之「2x2 關鍵影格時序與邊緣偽影鑑識拼圖」：</h4>
+                        <img src="data:image/jpeg;base64,${vr.grid_image_b64}" class="w-full rounded-xl border border-slate-700 shadow" alt="2x2 Temporal Forensic Grid">
+                    </div>`;
+                }
+
+                const vm = vr.visual_metrics || {};
+                html += `
+                <div class="mb-4 p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs space-y-1">
+                    <div>📺 <b>來源平台：</b><code class="text-sky-300">${vr.platform || '網路影音'}</code></div>
+                    <div>📝 <b>影片標題：</b><code class="text-slate-200">${vr.title || '未提供標題'}</code></div>
+                    <div>👤 <b>發布頻道：</b><code class="text-amber-300">${vr.author_name || '匿名/未公開頻道'}</code> ${vr.is_official_channel ? '🟢 (官方認證媒體)' : '⚠️ (非官方認證頻道)'}</div>
+                    <div>🔬 <b>人臉/背景高頻紋理比值：</b><code class="text-yellow-300">${vm.skin_smoothing_ratio || 1.0}x</code> ｜ <b>跨幀閃爍度：</b><code class="text-yellow-300">${vm.temporal_flicker_score || 0.0}</code></div>
+                </div>`;
+
+                if (vr.forensic_flags && vr.forensic_flags.length > 0) {
+                    html += `<div class="space-y-2 mb-3"><h4 class="font-bold text-rose-400 text-xs">🚩 偵測到的 AI 深偽與詐騙破綻：</h4>`;
+                    vr.forensic_flags.forEach(ff => {
+                        html += `
+                        <div class="red-flag-item p-3 rounded-lg text-xs">
+                            <strong class="text-rose-400">[${ff.severity || 'HIGH'}]</strong>
+                            「<code class="px-1.5 py-0.5 rounded bg-black/50 text-yellow-200">${ff.quote}</code>」 ➔
+                            <span>${ff.issue_type}</span>
+                        </div>`;
+                    });
+                    html += `</div>`;
+                } else {
+                    html += `<div class="safe-item p-3 rounded-lg text-xs">🟢 經檢驗影片關鍵影格、頻道來源與字幕內容，未發現 AI 換臉冒用名人或誘導加 LINE 領飆股之詐騙特徵。</div>`;
+                }
+                document.getElementById('video-result-container').innerHTML = html;
+            } catch (e) {
+                document.getElementById('video-result-container').innerHTML = `<div class="text-rose-400">影片鑑識失敗：${e}</div>`;
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function sync165Official() {
+            showLoading('🌐 正在連線內政部警政署 165 全民防騙網 (165.npa.gov.tw)...', '正在同步最新反詐公告與民眾通報涉詐廣告清單...');
+            try {
+                const resp = await fetch('/api/sync-165', { method: 'POST' });
+                const data = await resp.json();
+                if (data.success) {
+                    document.getElementById('kb-count').innerText = data.total_kb_count;
+                    document.getElementById('sync-165-result').innerHTML = `
+                        <div class="p-3 rounded-xl bg-emerald-950/40 border border-emerald-600/40 text-emerald-300">
+                            ✅ <b>同步成功！</b> 警政署 165 官網共 <b>${data.total_official_articles}</b> 篇防詐公告，目前 AI 知識庫共收錄 <b>${data.total_kb_count}</b> 筆手法。
+                        </div>`;
+                }
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function check165LineId() {
+            const lid = document.getElementById('query-line-id').value.trim();
+            if (!lid) return;
+            showLoading(`🔎 正在查詢警政署 165 涉詐 LINE ID 資料庫 (${lid})...`);
+            try {
+                const resp = await fetch('/api/check-line-id?line_id=' + encodeURIComponent(lid));
+                const data = await resp.json();
+                if (data.hit) {
+                    document.getElementById('line-id-result').innerHTML = `
+                        <div class="red-flag-item p-3 rounded-xl text-rose-200">
+                            🚨 <b>警政署 165 資料庫實時命中！</b><br>
+                            • 涉詐 LINE ID：<code class="text-yellow-300 font-bold">${data.hit.line_id}</code><br>
+                            • 通報日期：<code class="text-yellow-300">${data.hit.alert_date}</code> ｜ 類別：${data.hit.category}
+                        </div>`;
+                } else {
+                    document.getElementById('line-id-result').innerHTML = `
+                        <div class="p-3 rounded-xl bg-slate-900 border border-slate-700 text-slate-300">
+                            ℹ️ 目前 165 公開通報清單中尚無 <code>${lid}</code> 之紀錄（若對方要求加 LINE 領飆股或辦貸款，仍請使用即時文字鑑識分析話術！）。
+                        </div>`;
+                }
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function filterKB() {
+            const q = document.getElementById('kb-search').value.toLowerCase().trim();
+            document.querySelectorAll('.kb-item').forEach(el => {
+                const text = el.getAttribute('data-search').toLowerCase();
+                el.style.display = (!q || text.includes(q)) ? '' : 'none';
+            });
+        }
+
+        async function runBenchmark() {
+            showLoading('📊 正在執行 20 筆黃金基準測試集量化評估...', '逐筆驗證經典詐騙、同音變形字、新型釣魚與正常通知對照組...');
+            try {
+                const resp = await fetch('/api/benchmark', { method: 'POST' });
+                const data = await resp.json();
+                let html = `
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                    <div class="p-4 rounded-xl bg-slate-900 border border-slate-800 text-center">
+                        <div class="text-2xl font-extrabold text-emerald-400">${data.accuracy}%</div>
+                        <div class="text-xs text-slate-400 mt-1">總體準確率 (Accuracy)</div>
+                    </div>
+                    <div class="p-4 rounded-xl bg-slate-900 border border-slate-800 text-center">
+                        <div class="text-2xl font-extrabold text-sky-400">${data.recall}%</div>
+                        <div class="text-xs text-slate-400 mt-1">詐騙召回率 (Recall)</div>
+                    </div>
+                    <div class="p-4 rounded-xl bg-slate-900 border border-slate-800 text-center">
+                        <div class="text-2xl font-extrabold text-amber-400">${data.fpr}%</div>
+                        <div class="text-xs text-slate-400 mt-1">合法訊息誤判率 (FPR)</div>
+                    </div>
+                    <div class="p-4 rounded-xl bg-slate-900 border border-slate-800 text-center">
+                        <div class="text-2xl font-extrabold text-purple-400">${data.passed}/${data.total}</div>
+                        <div class="text-xs text-slate-400 mt-1">通過測試筆數</div>
+                    </div>
+                </div>`;
+                document.getElementById('bench-result-container').innerHTML = html;
+            } finally {
+                hideLoading();
+            }
+        }
+    </script>
+</body>
+</html>
