@@ -193,15 +193,15 @@ class AntiScamForensicEngine:
 
     @staticmethod
     def _stitch_multiline_urls(text: str) -> str:
-        """自動縫合手機截圖 OCR 因窄螢幕換行而斷裂的網址（如 https://\\ntwm5g.co/idn3 或 https://twm5g.my/\\nQM4J09XDK9）"""
+        """自動縫合手機截圖 OCR 因窄螢幕換行而斷裂的網址（含 https:// 與無協定之裸網域如 bsms.tw/\\noCW9Bo 或 https://twm5g.my/\\nQM4J09XDK9）"""
         if not text:
             return ""
-        stitched = re.sub(r"(https?://)\s*\r?\n\s*([a-zA-Z0-9])", r"\1\2", text)
-        stitched = re.sub(r"(https?://[a-zA-Z0-9._-]+/)\s*\r?\n\s*([a-zA-Z0-9_-]{2,})", r"\1\2", stitched)
+        stitched = re.sub(r"(https?://)\s*[\r\n]+\s*([a-zA-Z0-9])", r"\1\2", text)
+        stitched = re.sub(r"((?:https?://)?[a-zA-Z0-9._-]+\.[a-zA-Z]{2,}/)\s*[\r\n]+\s*([a-zA-Z0-9_-]{2,})", r"\1\2", stitched)
         return stitched
 
     def _resolve_redirect_url(self, short_url: str) -> str:
-        """即時追蹤短網址轉址目標（支援 HTTP 301/302 重新導向與 HTML Meta Refresh 跳轉，如 twm5g.my ➔ myfone.com.tw）"""
+        """即時追蹤短網址轉址目標（支援 HTTP 301/302 重新導向與 HTML Meta Refresh 跳轉，如 twm5g.my ➔ myfone.com.tw、bsms.tw ➔ ipd.nat.gov.tw）"""
         try:
             resp = requests.get(
                 short_url,
@@ -226,10 +226,11 @@ class AntiScamForensicEngine:
         low_text = user_text.lower()
         now_iso = datetime.now(timezone.utc).isoformat()
         
-        # 信任之台灣官方、金融保險、電信電商、交通醫療、民生事業與國際主流機構網域白名單 (共 180+ 常見合法網域)
+        # 信任之台灣官方、金融保險、電信電商、交通醫療、民生事業與國際主流機構網域白名單 (共 185+ 常見合法網域)
         TRUSTED_DOMAINS = [
-            # 1. 台灣 TWNIC 審核頂級網域與縣市政府
+            # 1. 台灣 TWNIC 審核頂級網域與縣市政府、研究法人 (工研院、iPAS 等)
             "gov.tw", "edu.tw", "org.tw", "net.tw", "com.tw", "mil.tw", "gov.taipei", "metro.taipei",
+            "ipas.org.tw", "itri.org.tw", "iii.org.tw", "narlabs.org.tw", "sinica.edu.tw",
             # 2. 金控與銀行 (含純網銀與數位帳戶專屬網域)
             "cathaybk.com.tw", "cathayholdings.com", "fubon.com", "taipeifubon.com.tw",
             "ctbcbank.com", "ctbcholding.com", "chinatrust.com.tw", "esunbank.com.tw", "esunbank.com", "esunfhc.com",
@@ -247,10 +248,10 @@ class AntiScamForensicEngine:
             "firstlife.com.tw", "tcb-life.com.tw", "allianz.com.tw", "allianz.com", "pcalife.com.tw",
             "prudential.com.tw", "aia.com.tw", "aia.com", "chubb.com", "chubblife.com.tw",
             "cigna.com.tw", "hontai.com.tw", "msig-mingtai.com.tw", "tmnewa.com.tw", "hotains.com.tw", "cki.com.tw",
-            # 4. 電信業者與官方專屬短網址 (含台灣大哥大 twm5g.co / twm5g.my / myfone 商城)
+            # 4. 電信業者與企業簡訊官方專屬短網址 (含台灣大哥大 twm5g.co / twm5g.my、互動資通 bsms.tw)
             "cht.com.tw", "cht.tw", "emome.net", "hinet.net",
             "taiwanmobile.com", "twm5g.co", "twm5g.my", "twm5g.com", "twm.tw", "oppay.tw", "myfone.com.tw", "myfone.tw", "myvideo.net.tw",
-            "fetnet.net", "fet.tw", "friday.tw", "tstartel.com",
+            "fetnet.net", "fet.tw", "friday.tw", "tstartel.com", "bsms.tw", "every8d.com", "every8d.com.tw",
             # 5. 電商購物、超商量販、百貨與行動支付
             "shopee.tw", "sho.pe", "shp.ee", "momoshop.com.tw", "momo.dm", "momo.com.tw",
             "pchome.com.tw", "pchome24h.com.tw", "pchome.tw", "books.com.tw",
