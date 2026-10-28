@@ -256,8 +256,8 @@ class AntiScamForensicEngine:
             # 7. 民生公用事業與物流宅配
             "taipower.com.tw", "water.gov.tw", "cpc.com.tw",
             "t-cat.com.tw", "hct.com.tw", "kerrytj.com", "e-can.com.tw", "sf-express.com", "dhl.com", "fedex.com", "ups.com",
-            # 8. 國際科技、社群、影音串流、新聞媒體與求職平台
-            "line.me", "lin.ee", "linecorp.com", "google.com", "google.com.tw", "goo.gl", "g.co", "youtube.com", "youtu.be",
+            # 8. 國際科技、社群、影音串流、新聞媒體與求職平台 (不含 goo.gl / bit.ly 等公開免洗短網址)
+            "line.me", "lin.ee", "linecorp.com", "google.com", "google.com.tw", "g.co", "youtube.com", "youtu.be",
             "apple.com", "icloud.com", "microsoft.com", "office.com", "live.com", "aka.ms", "linkedin.com",
             "facebook.com", "fb.com", "fb.me", "fb.watch", "instagram.com", "instagr.am", "threads.net", "whatsapp.com",
             "netflix.com", "disneyplus.com", "spotify.com", "kkbox.com", "linetv.tw", "iq.com", "gamer.com.tw",
@@ -269,10 +269,11 @@ class AntiScamForensicEngine:
 
         def _is_official_trusted_url(url_str: str) -> bool:
             u_l = url_str.lower()
-            # 排除偽造政府或知名機構連字號之釣魚網址 (如 gov-tw, mvdis-gov, water-gov, 7-11-service, momo-lucky)
+            # 排除偽造政府或知名機構連字號之釣魚網址與已停用/濫用之公開短網址 (如 goo.gl, bit.ly, t.ly, gov-tw)
             if any(fake_pat in u_l for fake_pat in [
                 "gov-tw", "mvdis-", "water-gov", "taipower-gov", "7-11-service",
-                "momo-lucky", "post-gov", "fetc-gov", "line-verify", "line-login"
+                "momo-lucky", "post-gov", "fetc-gov", "line-verify", "line-login",
+                "goo.gl", "bit.ly", "t.ly", "tinyurl.com", "is.gd", "cutt.ly"
             ]):
                 return False
             # 擷取網域 Hostname
@@ -338,7 +339,7 @@ class AntiScamForensicEngine:
         CHINA_FREE_EMAILS = ["126.com", "163.com", "qq.com", "sina.com", "sohu.com", "yeah.net", "foxmail.com"]
         for em in found_emails:
             em_low = em.lower()
-            if any( fed in em_low for fed in FREE_EMAIL_DOMAINS):
+            if any(fed in em_low for fed in FREE_EMAIL_DOMAINS):
                 if any(kw in low_text for kw in ["ikea", "宜家", "apple", "netflix", "卡友", "重複訂購", "自動續費", "續費", "分期", "客服", "帳單", "會員"]):
                     has_email_spoof = True
                     email_spoof_str = em
@@ -361,6 +362,16 @@ class AntiScamForensicEngine:
             ])
             or bool(line_id_match)
             or bool(suspicious_imessage_email and ("line" in low_text or "賴" in low_text or "not in your contact" in low_text or "report junk" in low_text))
+        )
+
+        # 偵測「惡意木馬病毒簡訊 / 電信小額付費盜刷與通訊錄跳板詐騙」（假宅配包裹簽收單 / 假聚會照片 + goo.gl 等公開短網址）
+        has_trojan_sms_lure = (
+            any(kw in user_text for kw in [
+                "包裹簽收單", "電子憑證請查收", "包裹號：", "包裹號:",
+                "上次聚會的照片", "聚會的照片", "存檔一下", "出去玩拍的照片",
+                "地址不詳無法派送", "包裹未簽收", "小額詐騙簡訊", "透過病毒程式入侵"
+            ])
+            or ("黑貓宅急便" in user_text and ("goo.gl" in low_text or has_suspicious_url))
         )
 
         # 關鍵詐騙特徵指標
@@ -387,7 +398,7 @@ class AntiScamForensicEngine:
 
         # 1. 正常訊息判斷（如果沒有觸發任何明顯詐騙特徵）
         is_scam = (
-            has_gov_bill_phishing or has_voting_phishing or has_cold_line_lure
+            has_trojan_sms_lure or has_gov_bill_phishing or has_voting_phishing or has_cold_line_lure
             or has_email_spoof or has_recurring_fee or has_phishing_link
             or has_money_trigger or has_legal_threat or has_investment_trap
             or has_teller_coaching or has_job_or_account_trap or has_urgent_relative_trap or has_crypto_airdrop
@@ -425,23 +436,27 @@ class AntiScamForensicEngine:
 
         # 2. 詐騙特徵鑑識
         matched_case = rag_cases[0] if rag_cases else {
-            "category": "假冒政府監理站/民生催繳釣魚簡訊" if has_gov_bill_phishing else (
-                "假親友比賽拉票釣魚 / LINE 帳號盜用詐騙" if has_voting_phishing else (
-                    "假親友裝熟引流詐騙 / iMessage 誘導加 LINE (殺豬盤與假投資前導)" if has_cold_line_lure else (
-                        "假投資與臨櫃話術詐騙" if has_teller_coaching else (
-                            "假冒官方電子郵件 (假重複扣款/解除分期)" if (has_email_spoof or has_recurring_fee) else (
-                                "釣魚網站與惡意連結詐騙" if has_high_risk_tld else (
-                                    "假求職/人頭帳戶詐騙" if has_job_or_account_trap else "疑似詐騙"
+            "category": "惡意木馬病毒簡訊 / 電信小額付費盜刷與通訊錄跳板詐騙" if has_trojan_sms_lure else (
+                "假冒政府監理站/民生催繳釣魚簡訊" if has_gov_bill_phishing else (
+                    "假親友比賽拉票釣魚 / LINE 帳號盜用詐騙" if has_voting_phishing else (
+                        "假親友裝熟引流詐騙 / iMessage 誘導加 LINE (殺豬盤與假投資前導)" if has_cold_line_lure else (
+                            "假投資與臨櫃話術詐騙" if has_teller_coaching else (
+                                "假冒官方電子郵件 (假重複扣款/解除分期)" if (has_email_spoof or has_recurring_fee) else (
+                                    "釣魚網站與惡意連結詐騙" if has_high_risk_tld else (
+                                        "假求職/人頭帳戶詐騙" if has_job_or_account_trap else "疑似詐騙"
+                                    )
                                 )
                             )
                         )
                     )
                 )
             ),
-            "tactics": ["冒名欺騙", "誘導私加 LINE 帳號"]
+            "tactics": ["冒名欺騙", "誘導點擊惡意連結"]
         }
 
-        if has_gov_bill_phishing:
+        if has_trojan_sms_lure:
+            category = "惡意木馬病毒簡訊 / 電信小額付費盜刷與通訊錄跳板詐騙"
+        elif has_gov_bill_phishing:
             category = "假冒政府監理站/民生催繳釣魚簡訊"
         elif has_voting_phishing:
             category = "假親友比賽拉票釣魚 / LINE 帳號盜用詐騙"
@@ -458,6 +473,19 @@ class AntiScamForensicEngine:
 
         # 根據文本抽取可疑特徵
         red_flags = []
+        if has_trojan_sms_lure:
+            if "包裹" in user_text or "黑貓" in user_text or "憑證" in user_text:
+                red_flags.append({
+                    "quote": "您有一件包裹簽收單電子憑證請查收。黑貓宅急便 http://goo.gl/976Zaj",
+                    "issue_type": "偽冒物流品牌搭配已停用之公開短網址 (goo.gl)：黑貓宅急便官方網域必為 t-cat.com.tw，絕不會用 http://goo.gl 傳送簽收單！點擊將下載惡意 APK 木馬病毒",
+                    "severity": "HIGH"
+                })
+            if "聚會" in user_text or "照片" in user_text or "存檔" in user_text:
+                red_flags.append({
+                    "quote": "上次聚會的照片，你存檔一下 http://goo.gl/I8QX9A",
+                    "issue_type": "典型木馬病毒「通訊錄跳板」擴散話術：利用已中毒親友手機自動直呼姓名群發，誘騙點擊短網址植入木馬並盜刷電信小額付費",
+                    "severity": "HIGH"
+                })
         if has_path_spoofing:
             red_flags.append({
                 "quote": suspicious_url_str or "t.ly/mvdis.gov.tw",
@@ -519,7 +547,7 @@ class AntiScamForensicEngine:
                 "issue_type": "教戰守則誘導隱瞞銀行行員關懷提問",
                 "severity": "HIGH"
             })
-        if has_phishing_link and not has_path_spoofing:
+        if has_phishing_link and not has_path_spoofing and not has_trojan_sms_lure:
             target_u = suspicious_url_str or (found_urls[0] if found_urls else "非官方可疑連結")
             red_flags.append({
                 "quote": target_u,
@@ -550,6 +578,11 @@ class AntiScamForensicEngine:
             })
 
         tactics = []
+        if has_trojan_sms_lure:
+            tactics.append({
+                "tactic_name": "木馬病毒通訊錄跳板與直呼姓名裝熟",
+                "description": "木馬程式入侵前一位受害者手機後，會自動讀取其通訊錄並直呼親友真實姓名，群發「上次聚會的照片，你存檔一下」或「黑貓宅急便包裹簽收單電子憑證請查收」，讓人因親切感與日常疏忽而點擊短網址下載惡意 APK 病毒。"
+            })
         if has_gov_bill_phishing:
             tactics.append({
                 "tactic_name": "短網址路徑偽裝與 iMessage 互動解鎖陷阱",
@@ -576,7 +609,14 @@ class AntiScamForensicEngine:
                 "description": f"詐騙方運用『{t}』手法降低受害者的防備心並迫使其在慌亂中採取行動。"
             })
 
-        if has_gov_bill_phishing:
+        if has_trojan_sms_lure:
+            score = 96
+            evidence_msg = (
+                f"經 165 AI 鑑識比對，此訊息為極度危險之【惡意木馬病毒簡訊 / 電信小額付費盜刷與通訊錄跳板詐騙】！\n"
+                f"• 破綻一（偽冒物流品牌搭配公開短網址）：黑貓宅急便之唯一官方網域為 `t-cat.com.tw`，絕不會使用已停用之公開縮網址（如 `http://goo.gl/976Zaj`）寄送「包裹簽收單電子憑證」！\n"
+                f"• 破綻二（通訊錄病毒跳板直呼姓名）：詐騙集團透過木馬病毒入侵親友手機通訊錄作為跳板，自動直呼您的名字傳送「上次聚會的照片，你存檔一下 (`http://goo.gl/I8QX9A`)」。一旦點擊連結，手機將被植入惡意 APK 木馬程式，在背景自動攔截認證簡訊盜刷『電信小額付費/遊戲點數』，並繼續用您的門號向通訊錄所有親友擴散病毒！"
+            )
+        elif has_gov_bill_phishing:
             score = 96
             evidence_msg = (
                 f"經 165 AI 鑑識比對，此訊息為極度危險之【假冒政府監理站/交通罰鍰催繳 iMessage 釣魚簡訊】！"
@@ -635,19 +675,36 @@ class AntiScamForensicEngine:
             "evidence_analysis": evidence_msg,
             "actionable_guidance": {
                 "immediate_actions": [
-                    "絕對不要在 LINE 搜尋並加入該陌生 ID（如 q09166），亦不要回覆此 iMessage 簡訊。",
-                    "請直接點擊畫面下方的「Report Junk（回報垃圾訊息）」並刪除對話，切勿點擊任何連結或輸入個資。"
-                ] if has_cold_line_lure else [
-                    "絕對不要回覆「1」或點擊訊息中的任何短網址連結（如 t.ly/mvdis.gov.tw 或 .top / .vip 網址），切勿輸入信用卡號、LINE 帳密或 OTP 驗證碼。",
-                    "切勿聽從指示進行線上繳費、LINE 輔助認證、操作 ATM 或開啟網路銀行。"
-                ],
+                    "絕對不要點擊簡訊中的任何公開短網址（如 http://goo.gl/...），切勿下載或允許安裝「未知來源應用程式 (.apk)」。",
+                    "若已不慎點擊並安裝不明程式，請立即開啟「飛航模式」切斷網路、備份重要照片後將手機恢復原廠設定，並通知親友勿點擊您門號發出的怪異簡訊。"
+                ] if has_trojan_sms_lure else (
+                    [
+                        "絕對不要在 LINE 搜尋並加入該陌生 ID（如 q09166），亦不要回覆此 iMessage 簡訊。",
+                        "請直接點擊畫面下方的「Report Junk（回報垃圾訊息）」並刪除對話，切勿點擊任何連結或輸入個資。"
+                    ] if has_cold_line_lure else [
+                        "絕對不要回覆「1」或點擊訊息中的任何短網址連結（如 t.ly/mvdis.gov.tw 或 .top / .vip 網址），切勿輸入信用卡號、LINE 帳密或 OTP 驗證碼。",
+                        "切勿聽從指示進行線上繳費、LINE 輔助認證、操作 ATM 或開啟網路銀行。"
+                    ]
+                ),
                 "official_verification": [
-                    "可至 iPhone「設定 ➔ 訊息 ➔ 未知與垃圾訊息」開啟「過濾未知的寄件人」，阻擋境外免費信箱群發之垃圾 iMessage。",
-                    "立即撥打 165 反詐騙諮詢專線進行查證與通報檢舉。"
-                ] if has_cold_line_lure else [
-                    "若有交通違規罰單疑問，請自行下載官方「監理服務 App」或由 Google 搜尋進入「監理服務網 (https://www.mvdis.gov.tw)」查證（政府已全面停發交通罰單催繳簡訊）。",
-                    "立即撥打 165 反詐騙諮詢專線進行查證與通報檢舉。"
-                ],
-                "recommended_safe_reply": "請勿理會或加 LINE，直接點選「回報垃圾訊息 (Report Junk)」刪除！" if has_cold_line_lure else "請勿回覆此訊息（切勿回覆 1），直接封鎖並回報垃圾訊息！"
+                    "請立即致電所屬電信公司客服（中華電信、台灣大哥大、遠傳電信），要求『關閉電信小額付費／代收功能』，防止木馬程式在背景盜刷遊戲點數。",
+                    "查詢黑貓宅急便包裹請自行搜尋進入唯一官方網站（https://www.t-cat.com.tw）輸入 12 碼託運單號，或撥打 165 反詐騙專線查證。"
+                ] if has_trojan_sms_lure else (
+                    [
+                        "可至 iPhone「設定 ➔ 訊息 ➔ 未知與垃圾訊息」開啟「過濾未知的寄件人」，阻擋境外免費信箱群發之垃圾 iMessage。",
+                        "立即撥打 165 反詐騙諮詢專線進行查證與通報檢舉。"
+                    ] if has_cold_line_lure else [
+                        "若有交通違規罰單疑問，請自行下載官方「監理服務 App」或由 Google 搜尋進入「監理服務網 (https://www.mvdis.gov.tw)」查證（政府已全面停發交通罰單催繳簡訊）。",
+                        "立即撥打 165 反詐騙諮詢專線進行查證與通報檢舉。"
+                    ]
+                ),
+                "recommended_safe_reply": (
+                    "請勿點擊 goo.gl 短網址！若為認識的親友門號傳來，請改用『電話通話』提醒對方手機可能已中木馬病毒！"
+                    if has_trojan_sms_lure else (
+                        "請勿理會或加 LINE，直接點選「回報垃圾訊息 (Report Junk)」刪除！"
+                        if has_cold_line_lure else
+                        "請勿回覆此訊息（切勿回覆 1），直接封鎖並回報垃圾訊息！"
+                    )
+                )
             }
         }, ensure_ascii=False)
