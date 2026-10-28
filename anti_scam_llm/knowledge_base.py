@@ -6,7 +6,7 @@
 
 import math
 import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 
 # 165 官方常見與新興科技詐騙手法特徵庫 (共 15 大手法)
@@ -130,8 +130,161 @@ KNOWLEDGE_BASE_ENTRIES: List[Dict[str, Any]] = [
         "keywords": ["免聯徵", "信用瑕疵可貸", "超低利率", "製造資金流水", "寄送提款卡美化帳戶", "快速核貸"],
         "tactics": ["急需資金脆弱心理", "低門檻包裝", "以美化帳戶為名騙取存摺"],
         "solution": "合法銀行辦理貸款絕不會要求寄送存摺正本、提款卡或提供密碼，要求寄送提款卡者必為詐騙。"
+    },
+    {
+        "id": "KB-016",
+        "category": "假冒政府「普發現金一萬元 / 補助津貼」釣魚簡訊詐騙 (165官網最新通報)",
+        "summary": "【165全民防騙網 #1715/#1701 同步】詐騙集團緊跟時事話題，發送假冒財政部或行政院之『普發現金一萬元開放登記領取』、『防詐補助津貼入帳確認』簡訊，夾帶偽冒政府之短網址或釣魚連結，誘騙民眾輸入身分證字號、銀行帳號密碼、信用卡號與簡訊 OTP 驗證碼進行盜刷或網銀轉帳。",
+        "keywords": ["普發現金", "普發萬元", "普發一萬元", "一萬元補助", "現金一萬", "補助津貼", "財政部普發", "線上登記領取", "點擊連結領取"],
+        "tactics": ["時事政策熱點誘餌", "假冒政府機關權威", "誘騙輸入信用卡與網銀帳密"],
+        "solution": "政府普發現金或各項補助絕不會發送『含短網址之領錢簡訊』，更不會要求輸入信用卡號、網銀密碼或操作 ATM！請認明政府唯一認證簡訊發送碼『111』。"
+    },
+    {
+        "id": "KB-017",
+        "category": "社群「一頁式詐騙廣告」與超商幽靈包裹貨到付款詐騙 (165官網最新通報)",
+        "summary": "【165全民防騙網 #1739 同步】刑事局追查發現詐騙集團於 Facebook、IG 大量投放『限時一折、專櫃出清、名醫/名人代言、免運貨到付款』之一頁式詐騙廣告，並透過國內代寄物流公司發送超商貨到付款包裹。民眾取貨拆封後才發現是劣質廉價品，或根本沒網購卻收到『幽靈到付包裹』。",
+        "keywords": ["一頁式廣告", "一頁式網站", "貨到付款", "限時下殺", "清倉特賣", "幽靈包裹", "代寄物流", "非賣場包裹", "沒買東西卻收到取貨通知"],
+        "tactics": ["超低價限時倒數促銷", "標榜超商貨到付款降低戒心", "盜用名人與新聞畫面背書"],
+        "solution": "網購若見『網頁僅有一長頁、無公司統編與實體地址、僅提供貨到付款、售價遠低於市價』即為一頁式詐騙！若收到非本人訂購之超商到付包裹切勿領取；若已取貨付款，請立即透過各大超商『爭議包裹退貨退款平台』申請退費。"
+    },
+    {
+        "id": "KB-018",
+        "category": "社群「舊衣回收換現金 / 小小體驗營報名」引流加 LINE 詐騙 (165官網最新通報)",
+        "summary": "【165全民防騙網 #1480 同步】詐騙集團於臉書地方社團張貼溫馨公益或親子活動貼文，宣稱『舊衣回收/捐二手書即可換取百元超商禮券與現金』或『超商小小店長/小小職人體驗營免費報名』，要求民眾點擊連結私訊主辦方 LINE 客服登記，隨後拉入群組誘導參與『公益認購抽獎、匯款解凍或假投資代操』。",
+        "keywords": ["舊衣回收換現金", "舊衣回收領禮券", "小小體驗營", "小小店長體驗營", "親子體驗營報名", "免費報名加LINE", "公益抽獎"],
+        "tactics": ["環保公益與親子活動偽裝", "小額超商禮券誘餌", "誘導私訊加 LINE 後轉入投資/刷單群組"],
+        "solution": "凡臉書社團張貼『舊衣回收換現金/禮券』或『知名連鎖品牌小小店長體驗營』卻要求私下加個人 LINE 帳號報名者，皆為詐騙引流手法！請直接向該品牌官方網站查證。"
     }
 ]
+
+
+def check_165_official_line_id(line_id: str) -> Optional[Dict[str, Any]]:
+    """即時連線內政部警政署 165 全民防騙網官方 API，查驗 LINE ID 是否已被通報為詐騙帳號
+    API 端點: GET https://165.npa.gov.tw/api/queryLineId/{line_id}
+    """
+    import requests
+    clean_id = (line_id or "").strip().lstrip("@")
+    if not clean_id or len(clean_id) < 3:
+        return None
+    try:
+        url = f"https://165.npa.gov.tw/api/queryLineId/{clean_id}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "Accept": "application/json"
+        }
+        resp = requests.get(url, headers=headers, timeout=3.5)
+        if resp.status_code == 200:
+            data = resp.json()
+            if isinstance(data, list) and len(data) > 0:
+                first_hit = data[0]
+                return {
+                    "is_reported_scam": True,
+                    "line_id": first_hit.get("lineId", clean_id),
+                    "alert_time": first_hit.get("alertTime", "近期"),
+                    "source": "內政部警政署 165 全民防騙網官方資料庫 (165.npa.gov.tw)"
+                }
+            return {
+                "is_reported_scam": False,
+                "line_id": clean_id,
+                "source": "內政部警政署 165 全民防騙網官方資料庫 (165.npa.gov.tw)"
+            }
+    except Exception:
+        pass
+    return None
+
+
+def sync_from_165_official_api(max_items: int = 8) -> Dict[str, Any]:
+    """即時從警政署 165 全民防騙網 (https://165.npa.gov.tw) 官方 API 抓取最新反詐公告與每日通報涉詐廣告清單，
+    並自動轉換注入本系統之 KNOWLEDGE_BASE_ENTRIES 向量檢索知識庫。
+    """
+    import os
+    import json
+    import requests
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept": "application/json"
+    }
+    synced_articles = []
+    daily_ad_reports = []
+    error_msg = ""
+
+    # 1. 抓取 165 最新反詐新聞與手法公告 (list/1)
+    try:
+        r_list = requests.get("https://165.npa.gov.tw/api/article/list/1", headers=headers, timeout=6)
+        if r_list.status_code == 200:
+            items = r_list.json()
+            if isinstance(items, list):
+                for item in items[:max_items]:
+                    art_id = item.get("id")
+                    title = (item.get("title") or "").strip()
+                    pub_date = (item.get("publishDate") or "")[:10]
+                    if not title:
+                        continue
+                    # 嘗試抓取前 3 筆的完整內文摘要
+                    content_summary = ""
+                    if len(synced_articles) < 3 and art_id:
+                        try:
+                            r_det = requests.get(f"https://165.npa.gov.tw/api/article/detail/1/{art_id}", headers=headers, timeout=3.5)
+                            if r_det.status_code == 200:
+                                raw_html = r_det.json().get("content") or ""
+                                clean_txt = re.sub(r"<[^>]+>", " ", raw_html)
+                                clean_txt = re.sub(r"&nbsp;|\s+", " ", clean_txt).strip()
+                                content_summary = clean_txt[:220] + ("..." if len(clean_txt) > 220 else "")
+                        except Exception:
+                            pass
+                    if not content_summary:
+                        content_summary = f"警政署 165 全民防騙網於 {pub_date} 發布之最新反詐公告：「{title}」。提醒民眾提高警覺，遇可疑訊息請撥打 165 專線查證。"
+
+                    # 自動抽取標題中之關鍵詞
+                    extracted_kws = re.findall(r"「([^」]+)」|【([^】]+)】", title)
+                    kw_list = [k[0] or k[1] for k in extracted_kws if (k[0] or k[1])]
+                    if not kw_list:
+                        kw_list = [w for w in ["一頁式廣告", "普發", "假檢警", "LINE", "投票", "投資", "租屋", "台水", "台電", "郵局", "抽獎"] if w in title]
+                    if not kw_list:
+                        kw_list = [title[:6]]
+
+                    kb_entry = {
+                        "id": f"165-LIVE-{art_id}",
+                        "category": f"【165官網同步】{title}",
+                        "publish_date": pub_date,
+                        "summary": content_summary,
+                        "keywords": kw_list,
+                        "tactics": ["165官方最新通報態樣", "時事與社交工程誘餌"],
+                        "solution": "此為內政部警政署 165 全民防騙網 (https://165.npa.gov.tw) 發布之最新防詐示警，切勿點擊不明連結或依指示匯款，請立即撥打 165 查證。"
+                    }
+                    synced_articles.append(kb_entry)
+
+                    # 動態注入 KNOWLEDGE_BASE_ENTRIES (避免重複)
+                    existing_ids = {e.get("id") for e in KNOWLEDGE_BASE_ENTRIES}
+                    if kb_entry["id"] not in existing_ids:
+                        KNOWLEDGE_BASE_ENTRIES.append(kb_entry)
+    except Exception as e:
+        error_msg = str(e)
+
+    # 2. 抓取 165 每日民眾通報社群平臺涉詐廣告清單 (list/9)
+    try:
+        r_ads = requests.get("https://165.npa.gov.tw/api/article/list/9", headers=headers, timeout=5)
+        if r_ads.status_code == 200:
+            ad_items = r_ads.json()
+            if isinstance(ad_items, list):
+                for ad in ad_items[:5]:
+                    daily_ad_reports.append({
+                        "id": ad.get("id"),
+                        "title": ad.get("title", ""),
+                        "publish_date": (ad.get("publishDate") or "")[:16].replace("T", " ")
+                    })
+    except Exception:
+        pass
+
+    return {
+        "success": len(synced_articles) > 0 or len(daily_ad_reports) > 0,
+        "synced_count": len(synced_articles),
+        "synced_articles": synced_articles,
+        "daily_ad_reports": daily_ad_reports,
+        "total_kb_count": len(KNOWLEDGE_BASE_ENTRIES),
+        "error": error_msg
+    }
 
 
 class ScamKnowledgeRetriever:

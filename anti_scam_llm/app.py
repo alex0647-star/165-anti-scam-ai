@@ -34,13 +34,23 @@ try:
     from anti_scam_llm.schemas import InputPayload, RiskLevel
     from anti_scam_llm.reasoning_engine import AntiScamForensicEngine
     from anti_scam_llm.dataset import GOLDEN_TEST_DATASET
-    from anti_scam_llm.knowledge_base import KNOWLEDGE_BASE_ENTRIES, ScamKnowledgeRetriever
+    from anti_scam_llm.knowledge_base import (
+        KNOWLEDGE_BASE_ENTRIES,
+        ScamKnowledgeRetriever,
+        sync_from_165_official_api,
+        check_165_official_line_id,
+    )
     from anti_scam_llm.config import get_secret
 except ImportError:
     from schemas import InputPayload, RiskLevel
     from reasoning_engine import AntiScamForensicEngine
     from dataset import GOLDEN_TEST_DATASET
-    from knowledge_base import KNOWLEDGE_BASE_ENTRIES, ScamKnowledgeRetriever
+    from knowledge_base import (
+        KNOWLEDGE_BASE_ENTRIES,
+        ScamKnowledgeRetriever,
+        sync_from_165_official_api,
+        check_165_official_line_id,
+    )
     from config import get_secret
 
 # 自訂 CSS 樣式 (深色/淺色模式全適配高對比排版)
@@ -405,10 +415,61 @@ with tab_image:
 # 頁籤三：165 詐騙知識庫導覽
 # ==========================================
 with tab_kb:
-    st.subheader("📚 165 反詐騙劇本與手法特徵庫")
-    st.caption("內建 15 大經典與新興科技犯罪特徵庫，支援關鍵字即時檢索。")
+    st.subheader("📚 165 反詐騙劇本與警政署官網即時情資同步")
+    st.caption(f"內建 **{len(KNOWLEDGE_BASE_ENTRIES)} 大類** 經典與新興科技犯罪特徵庫，並支援直接連線 **內政部警政署 165 全民防騙網 (`https://165.npa.gov.tw`)** 官方 REST API 即時同步最新公告與查驗涉詐 LINE ID。")
 
-    search_kw = st.text_input("🔎 搜尋詐騙關鍵字（例如：ATM、飆股、監理站、Deepfake、空投）", "")
+    col_sync, col_line_q = st.columns([1.15, 1.0], gap="large")
+
+    with col_sync:
+        st.markdown("#### 🔄 警政署 165 官網新型詐騙即時同步")
+        st.caption("直連 `165.npa.gov.tw/api/article/list/1` 與 `/list/9`，自動擷取最新防詐公告並匯入 AI 鑑識知識庫。")
+        if st.button("🌐 立即連線 165 官網同步最新詐騙手法", type="primary", use_container_width=True):
+            with st.spinner("正在連線內政部警政署 165 全民防騙網 (`165.npa.gov.tw`) 擷取最新防詐公告..."):
+                sync_res = sync_from_165_official_api(max_items=6)
+                st.session_state["last_165_sync"] = sync_res
+
+        if "last_165_sync" in st.session_state and st.session_state["last_165_sync"]:
+            s_res = st.session_state["last_165_sync"]
+            if s_res.get("success"):
+                st.success(
+                    f"✅ **同步成功！** 警政署 165 官網共 **{s_res.get('total_official_articles', 0)}** 篇防詐公告，"
+                    f"本次新增匯入 **{s_res.get('newly_added_count', 0)}** 筆最新公告至 AI 知識庫（目前共 **{len(KNOWLEDGE_BASE_ENTRIES)}** 筆）。"
+                )
+                if s_res.get("latest_reported_ads"):
+                    with st.expander("📢 檢視 165 官網最新「民眾通報社群平臺涉詐廣告/貼文清單」", expanded=False):
+                        for ad in s_res["latest_reported_ads"]:
+                            st.markdown(f"- 🗓️ `{ad['publishDate']}` — [{ad['title']}]({ad['url']})")
+            else:
+                st.warning(f"⚠️ 連線提示：{s_res.get('error', '無法連線至 165 官網')}")
+
+    with col_line_q:
+        st.markdown("#### 🕵️ 165 官方通報涉詐 LINE ID 即時查驗")
+        st.caption("直連 `165.npa.gov.tw/api/queryLineId/{id}` 查驗可疑 LINE ID 是否已被警方通報（測試範例：`peakchaser116`）。")
+        line_q_col1, line_q_col2 = st.columns([2.2, 1.0])
+        with line_q_col1:
+            query_line_id = st.text_input("輸入欲查驗之 LINE ID：", placeholder="例如：peakchaser116", label_visibility="collapsed")
+        with line_q_col2:
+            check_line_btn = st.button("🔎 查驗 LINE ID", use_container_width=True)
+
+        if check_line_btn and query_line_id.strip():
+            with st.spinner(f"正在查詢 165 警政署涉詐資料庫 (`{query_line_id.strip()}`)..."):
+                hit = check_165_official_line_id(query_line_id.strip())
+                if hit:
+                    st.error(
+                        f"🚨 **警政署 165 資料庫命中！**\n\n"
+                        f"- **涉詐 LINE ID**：`{hit['line_id']}`\n"
+                        f"- **通報日期**：`{hit['alert_date']}`\n"
+                        f"- **案件類別**：`{hit['category']}` (代碼 `{hit['type_code']}`)\n"
+                        f"- **官方建議**：此帳號已被民眾與警方通報為詐騙集團帳號，請勿加入好友或匯款！"
+                    )
+                else:
+                    st.info(
+                        f"ℹ️ 目前 165 已公開通報清單中尚無 `{query_line_id.strip()}` 之紀錄。\n"
+                        f"*(註：詐騙集團常每日更換新 LINE ID，若對方透過陌生簡訊要求加 LINE、談及飆股/借貸/解除分期，仍請使用「💬 即時文字鑑識」進行 AI 語意分析！)*"
+                    )
+
+    st.markdown("---")
+    search_kw = st.text_input("🔎 搜尋知識庫詐騙關鍵字（例如：普發現金、一頁式、包裹、ATM、飆股、監理站、Deepfake）", "")
     
     filtered_entries = KNOWLEDGE_BASE_ENTRIES
     if search_kw.strip():
@@ -427,6 +488,8 @@ with tab_kb:
             st.markdown(f"**🏷️ 常見關鍵字/觸發詞**：`{'`、`'.join(item['keywords'])}`")
             st.markdown(f"**🎭 常用心理戰術**：{'、'.join(item['tactics'])}")
             st.markdown(f"**🛡️ 165 防範與破解對策**：\n> {item['solution']}")
+            if item.get("source_url"):
+                st.markdown(f"**🔗 165 官網原文連結**：[{item['source_url']}]({item['source_url']})")
 
 
 # ==========================================

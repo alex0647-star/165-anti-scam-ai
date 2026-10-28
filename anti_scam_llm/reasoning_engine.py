@@ -15,7 +15,7 @@ import requests
 from anti_scam_llm.config import GEMINI_API_KEY, OPENAI_API_KEY, DEFAULT_MODEL_PROVIDER, DEFAULT_MODEL_NAME, get_secret
 from anti_scam_llm.schemas import AntiScamAnalysisResult, InputPayload
 from anti_scam_llm.prompts import build_analysis_prompt
-from anti_scam_llm.knowledge_base import ScamKnowledgeRetriever
+from anti_scam_llm.knowledge_base import ScamKnowledgeRetriever, check_165_official_line_id
 from anti_scam_llm.vision_processor import VisionProcessor
 from anti_scam_llm.guardrails import OutputGuardrail
 
@@ -369,6 +369,15 @@ class AntiScamForensicEngine:
         # 偵測「亂槍打鳥裝熟誘導加 LINE / 陌生 iMessage 引流詐騙（含假信貸、假飆股、裝熟三合一）」特徵
         all_line_ids = re.findall(r"(?:加我\s*l[i1]ne|加下我\s*l[i1]ne|加\s*l[i1]ne|l[i1]ne\s*id|l[i1]ne|id|加賴|加我賴)\s*[:：]\s*([a-zA-Z0-9_.-]{3,})", user_text, re.IGNORECASE)
         extracted_line_id = "、".join(dict.fromkeys(all_line_ids)) if all_line_ids else ""
+
+        # 即時連線警政署 165 全民防騙網官方 API (https://165.npa.gov.tw/api/queryLineId/) 查驗是否為已通報詐騙 LINE ID
+        official_165_hit = None
+        for lid in list(dict.fromkeys(all_line_ids))[:2]:
+            res_165 = check_165_official_line_id(lid)
+            if res_165 and res_165.get("is_reported_scam"):
+                official_165_hit = res_165
+                break
+
         has_fake_loan_lure = any(kw in user_text for kw in [
             "永豐貸", "永豐贷", "借款資格", "借款资格", "無需照會", "無需照合",
             "無需保人", "免保人", "月利息只需", "當天辦理當天入帳", "当天静理当天入眼",
@@ -382,9 +391,11 @@ class AntiScamForensicEngine:
             any(kw in low_text for kw in [
                 "找不到你", "把我刪了", "把我line刪了", "把我line删了", "有事找你", "有急事找你", "急事找你",
                 "電話打不通", "打不通你電話", "加我line", "加我 line", "加下我l1ne", "l1ne", "加我賴",
-                "加我的line", "加我的賴", "還好有存你的聯繫方式", "聯聚方式"
+                "加我的line", "加我的賴", "還好有存你的聯繫方式", "聯聚方式",
+                "舊衣回收換現金", "舊衣回收領禮券", "小小體驗營", "小小店長體驗營"
             ])
             or bool(all_line_ids)
+            or bool(official_165_hit)
             or has_fake_loan_lure
             or has_stock_tip_lure
             or bool(suspicious_imessage_email and ("line" in low_text or "賴" in low_text or "not in your contact" in low_text or "report junk" in low_text))
@@ -406,9 +417,10 @@ class AntiScamForensicEngine:
         has_gov_bill_keywords = any(kw in user_text for kw in [
             "交通違規", "違規罰鍰", "違規罰款", "交通罰款", "逾期未到案", "逾期未繳",
             "水費逾期", "電費逾期", "水費欠繳", "電費欠繳", "執行停水", "即將停水",
-            "通行費", "點數即將到期", "積分即將到期", "線上繳納"
+            "通行費", "點數即將到期", "積分即將到期", "線上繳納",
+            "普發現金", "普發萬元", "普發一萬元", "一萬元補助"
         ])
-        has_gov_bill_phishing = has_path_spoofing or has_imessage_unlock or (has_gov_bill_keywords and (has_suspicious_url or has_high_risk_tld))
+        has_gov_bill_phishing = has_path_spoofing or has_imessage_unlock or (has_gov_bill_keywords and (has_suspicious_url or has_high_risk_tld or "普發" in user_text))
         has_phishing_link = has_suspicious_url or has_high_risk_tld or has_path_spoofing or (".cc" in low_text and "kktix.cc" not in low_text)
         has_voting_phishing = any(kw in user_text for kw in [
             "繪畫比賽", "參加繪畫", "創意繪畫", "幫忙投一票", "幫我投", "幫忙投",
@@ -418,7 +430,7 @@ class AntiScamForensicEngine:
         has_legal_threat = ("洗錢防制法" in user_text or "地檢署" in user_text or "特偵組" in user_text or "強制拘提" in user_text or "公文傳票" in user_text or "健保卡異常" in user_text or "鎖卡" in user_text or "凍結" in user_text or "停水" in user_text)
         has_investment_trap = ("飆股" in user_text or "老師帶盤" in user_text or "內線消息" in user_text or "保證獲利" in user_text or "翻倍" in user_text or "外資" in user_text or "佈局" in user_text or "代操" in user_text or "蛋糕" in user_text or "金控" in user_text or "加.賴" in user_text or "投.貲" in user_text or "老帥" in user_text)
         has_teller_coaching = ("不能講" in user_text or "不能說" in user_text or "行員問" in user_text or "行員" in user_text or "臨櫃" in user_text or "裝潢款" in user_text or "買黃金" in user_text or "三方佈局" in user_text or "券商的蛋糕" in user_text)
-        has_job_or_account_trap = ("兼職" in user_text or "打字員" in user_text or "家庭代工" in user_text or "存摺" in user_text or "提款卡" in user_text or "包來回機票" in user_text or "海外" in user_text or "東南亞" in user_text or "融資" in user_text or "低利貸款" in user_text or "資金流水" in user_text or "小白皆可貸" in user_text)
+        has_job_or_account_trap = ("兼職" in user_text or "打字員" in user_text or "家庭代工" in user_text or "存摺" in user_text or "提款卡" in user_text or "包來回機票" in user_text or "海外" in user_text or "東南亞" in user_text or "融資" in user_text or "低利貸款" in user_text or "資金流水" in user_text or "小白皆可貸" in user_text or "一頁式廣告" in user_text or "幽靈包裹" in user_text)
         has_urgent_relative_trap = ("車禍" in user_text or "和解" in user_text or "救我" in user_text or "快點救我" in user_text or "爸！是我啦" in user_text or "撞到人" in user_text or "保留訂金" in user_text or "急租" in user_text)
         has_crypto_airdrop = ("空投" in user_text or "airdrop" in low_text or "錢包地址" in user_text or "claim" in low_text or "solana" in low_text or "治理代幣" in user_text or "抽中" in user_text or "特獎" in user_text)
 
@@ -483,11 +495,13 @@ class AntiScamForensicEngine:
         if has_trojan_sms_lure:
             category = "惡意木馬病毒簡訊 / 電信小額付費盜刷與通訊錄跳板詐騙"
         elif has_gov_bill_phishing:
-            category = "假冒政府監理站/民生催繳釣魚簡訊"
+            category = "假冒政府普發現金/補助津貼釣魚簡訊 (165官網最新通報)" if "普發" in user_text else "假冒政府監理站/民生催繳釣魚簡訊"
         elif has_voting_phishing:
             category = "假親友比賽拉票釣魚 / LINE 帳號盜用詐騙"
         elif has_cold_line_lure and not (has_investment_trap or has_money_trigger or has_legal_threat):
-            if has_fake_loan_lure and has_stock_tip_lure:
+            if official_165_hit:
+                category = f"警政署 165 官方通報涉詐 LINE 帳號 ({official_165_hit['line_id']})"
+            elif has_fake_loan_lure and has_stock_tip_lure:
                 category = "iMessage 垃圾簡訊引流詐騙 (假信貸 / 裝熟認親 / 飆股內線誘導加 LINE)"
             elif has_fake_loan_lure:
                 category = "假冒銀行低利信貸 iMessage 引流詐騙 (免保人免照會誘導加 LINE)"
@@ -506,6 +520,12 @@ class AntiScamForensicEngine:
 
         # 根據文本抽取可疑特徵
         red_flags = []
+        if official_165_hit:
+            red_flags.append({
+                "quote": f"LINE ID: {official_165_hit['line_id']} (通報日期: {official_165_hit['alert_time']})",
+                "issue_type": f"🚨 警政署 165 全民防騙網官方資料庫實時命中：此 LINE ID 已於 {official_165_hit['alert_time']} 遭民眾報案並由刑事局正式列為涉詐高風險帳號！",
+                "severity": "HIGH"
+            })
         if has_trojan_sms_lure:
             if "包裹" in user_text or "黑貓" in user_text or "憑證" in user_text:
                 red_flags.append({
@@ -533,8 +553,8 @@ class AntiScamForensicEngine:
             })
         if has_gov_bill_phishing and not has_path_spoofing:
             red_flags.append({
-                "quote": "交通違規罰鍰逾期未到案 / 水電費逾期補繳",
-                "issue_type": "假冒政府機關催繳罰單或水電費，製造逾期受罰恐慌誘導線上刷卡盜刷",
+                "quote": "普發現金一萬元線上領取 / 交通違規罰鍰或水電費逾期補繳",
+                "issue_type": "假冒政府機關普發現金或催繳水電罰單（165官網最新警示：政府唯一認證簡訊碼為 111，絕不會傳送短網址要求領錢或刷卡）",
                 "severity": "HIGH"
             })
         if suspicious_imessage_email:
@@ -654,7 +674,13 @@ class AntiScamForensicEngine:
                 "description": f"詐騙方運用『{t}』手法降低受害者的防備心並迫使其在慌亂中採取行動。"
             })
 
-        if has_trojan_sms_lure:
+        if official_165_hit:
+            score = 98
+            evidence_msg = (
+                f"🚨 【警政署 165 全民防騙網官方資料庫實時命中】！\n"
+                f"經即時連線內政部警政署 165 全民防騙網官方 API (`165.npa.gov.tw/api/queryLineId`) 查驗，本訊息中之 LINE 帳號「`{official_165_hit['line_id']}`」已於 `{official_165_hit['alert_date']}` 被民眾與警方正式通報列為【{official_165_hit['category']}】涉詐高風險帳號！請絕對不要加入好友或與其聯繫！"
+            )
+        elif has_trojan_sms_lure:
             score = 96
             evidence_msg = (
                 f"經 165 AI 鑑識比對，此訊息為極度危險之【惡意木馬病毒簡訊 / 電信小額付費盜刷與通訊錄跳板詐騙】！\n"
