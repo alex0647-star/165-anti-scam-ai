@@ -222,8 +222,11 @@
                     </button>
                 </div>
 
-                <label class="block text-xs font-semibold text-slate-300 mb-1">🔗 方式一：貼上影片網址 (URL)</label>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">🔗 方式一：貼上影片網址 (URL) — <span class="text-sky-400">貼上網址後將自動啟動鑑識</span></label>
                 <input type="text" id="input-video-url"
+                       oninput="onVideoUrlManualChange()"
+                       onpaste="setTimeout(() => { onVideoUrlManualChange(); analyzeVideo(); }, 120)"
+                       onkeydown="if(event.key==='Enter'){ analyzeVideo(); }"
                        class="w-full rounded-xl bg-slate-900/90 border border-slate-700 p-3 text-sm text-white placeholder-slate-500 mb-3"
                        placeholder="例如：https://www.youtube.com/shorts/... 或 https://www.tiktok.com/...">
 
@@ -373,7 +376,18 @@
             analyzeText();
         }
 
+        window._isSampleVideoCtx = false;
+
+        function onVideoUrlManualChange() {
+            // 若使用者手動貼上或修改新影片連結，且下方說明欄仍殘留範例按鈕的預設文字，自動清空說明欄以免舊範例干擾新影片鑑識
+            if (window._isSampleVideoCtx) {
+                document.getElementById('input-video-ctx').value = '';
+                window._isSampleVideoCtx = false;
+            }
+        }
+
         function fillVideoSample(type) {
+            window._isSampleVideoCtx = true;
             if (type === 'jensen') {
                 document.getElementById('input-video-url').value = "https://www.youtube.com/watch?v=PU2lJrpITs8";
                 document.getElementById('input-video-ctx').value = "【AI換臉深偽測試】黃仁勳最新內部演講：台灣散戶最後翻身機會！免費領取下半年 AI 飆股名單與公益贈書，請點擊下方說明欄連結加助教 LINE：peakchaser116";
@@ -516,6 +530,10 @@
             formData.append('user_context', videoCtx);
             if (videoFile) formData.append('video_file', videoFile);
 
+            document.getElementById('video-result-container').innerHTML = `
+                <div class="p-6 rounded-xl bg-slate-900/60 border border-sky-500/40 text-center text-sky-300 animate-pulse">
+                    🎬 正在連線抽取影片 4 張時序關鍵影格並重新計算 AI 合成率與 165 防詐指標...
+                </div>`;
             showLoading('🎬 正在連線抽取影片關鍵影格並進行 AI 深偽 (Deepfake) 鑑識...', '正在合成 2x2 時序鑑識網格圖、計算人臉頻域紋理比值並核驗頻道來源...');
             try {
                 const resp = await fetch('/api/analyze-video', { method: 'POST', body: formData });
@@ -525,10 +543,14 @@
                 const aiColor = dfProb <= 30 ? '#22C55E' : (dfProb <= 65 ? '#F97316' : '#EF4444');
                 const scamColor = score <= 30 ? '#22C55E' : (score <= 65 ? '#F97316' : '#EF4444');
                 const vm = vr.visual_metrics || {};
+                const nowStr = new Date().toLocaleTimeString('zh-TW', { hour12: false });
 
                 let html = `
                 <div class="mb-4 p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs space-y-1">
-                    <div>📺 <b>來源平台：</b><code class="text-sky-300">${vr.platform || '網路影音'}</code> ｜ 📌 <b>綜合類型：</b><code class="text-amber-200">${vr.primary_type || ''}</code></div>
+                    <div class="flex justify-between items-center flex-wrap gap-2">
+                        <span>📺 <b>來源平台：</b><code class="text-sky-300">${vr.platform || '網路影音'}</code> ｜ 📌 <b>綜合類型：</b><code class="text-amber-200">${vr.primary_type || ''}</code></span>
+                        <span class="text-slate-400">⏱️ 鑑識更新：<code class="text-emerald-300">${nowStr}</code></span>
+                    </div>
                     <div>📝 <b>影片標題：</b><code class="text-slate-200">${vr.title || '未提供標題'}</code></div>
                     <div>👤 <b>發布頻道：</b><code class="text-amber-300">${vr.author_name || '匿名/未公開頻道'}</code> ${vr.is_official_channel ? (score <= 30 ? '🟢 (官方認證媒體/機構)' : '⚠️ (遭擷取畫面搭配詐騙引流文案)') : '⚠️ (非官方認證頻道)'}</div>
                 </div>`;
@@ -556,7 +578,7 @@
                     <div class="text-xs font-bold text-white mb-1.5">${vr.ai_verdict_label || ''}</div>
                     <div class="text-xs text-slate-300 leading-relaxed whitespace-pre-line bg-slate-950/60 p-3 rounded-lg border border-slate-800/80 mb-2">${vr.ai_synthesis_summary || ''}</div>
                     <div class="text-xs text-slate-400">
-                        🔬 <b>電腦視覺頻域指標：</b>人臉/背景高頻紋理比值 <code class="text-yellow-300">${vm.skin_smoothing_ratio || 1.0}x</code> ｜ 跨幀閃爍度 <code class="text-yellow-300">${vm.temporal_flicker_score || 0.0}</code>
+                        🔬 <b>4 幀電腦視覺頻域指標：</b>高頻紋理比值 <code class="text-yellow-300">${vm.skin_smoothing_ratio || 1.0}x</code> ｜ 跨幀變化度 <code class="text-yellow-300">${vm.temporal_flicker_score || 0.0}</code> ｜ 微紋理平滑度 <code class="text-yellow-300">${vm.synthetic_smoothness_index || 18}%</code> ｜ 色彩飽和度 <code class="text-yellow-300">${vm.color_saturation_index || 30}%</code>
                     </div>`;
 
                 if (vr.ai_synthesis_flags && vr.ai_synthesis_flags.length > 0) {
